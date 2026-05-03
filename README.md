@@ -154,7 +154,7 @@ uv run pytest tests/
 ## 📁 Project Structure
 
 ```text
-product-intelligence-platform/
+PriceSenseAI/
 │
 ├── README.md
 ├── .env.example
@@ -217,6 +217,7 @@ product-intelligence-platform/
 │       ├── product_rankings.py
 │       └── anomaly_detection.py
 │
+|
 ├── llm_analyzer/
 │   ├── __init__.py
 │   ├── prompts/
@@ -230,19 +231,48 @@ product-intelligence-platform/
 │   ├── vector_store.py
 │   └── tools.py
 │
-├── api/
+|
+├── frontend/
+│   ├── package.json
+│   ├── next.config.js
+│   ├── tailwind.config.js
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── layout.tsx
+│   │   │   ├── page.tsx
+│   │   │   ├── products/
+│   │   │   │   └── page.tsx
+│   │   │   ├── competitors/
+│   │   │   │   └── page.tsx
+│   │   │   ├── analytics/
+│   │   │   │   └── page.tsx
+│   │   │   └── chat/
+│   │   │       └── page.tsx
+│   │   │
+│   │   ├── components/
+│   │   │   ├── ProductCard.tsx
+│   │   │   ├── PriceChart.tsx
+│   │   │   ├── CompetitorTable.tsx
+│   │   │   ├── InsightCard.tsx
+│   │   │   └── ChatBox.tsx
+│   │   │
+│   │   ├── lib/
+│   │   │   ├── api.ts
+│   │   │   └── types.ts
+│   │   │
+│   │   └── styles/
+│   │       └── globals.css
+├── backend/
 │   ├── main.py
 │   ├── routes/
 │   │   ├── products.py
 │   │   ├── competitors.py
 │   │   ├── analytics.py
 │   │   └── chat.py
-│   │
 │   ├── services/
 │   │   ├── product_service.py
 │   │   ├── analytics_service.py
 │   │   └── llm_service.py
-│   │
 │   └── schemas/
 │       ├── product.py
 │       └── response.py
