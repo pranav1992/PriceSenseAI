@@ -460,7 +460,9 @@ export default function Home() {
         </header>
 
         <form
-          onSubmit={handleScrapeProduct}
+          onSubmit={()=>{}
+            // handleScrapeProduct
+          }
           className="grid gap-4 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm lg:grid-cols-[1fr_1fr_180px_auto]"
         >
           <label className="flex flex-col gap-2 text-sm font-medium text-zinc-700">
@@ -556,7 +558,9 @@ export default function Home() {
                   key={product.asin}
                   product={product}
                   isSelected={selectedAsin === product.asin}
-                  onAnalyze={startCompetitorAnalysis}
+                  onAnalyze={()=>{}
+                    // startCompetitorAnalysis
+                  }
                 />
               ))}
             </div>
@@ -598,7 +602,10 @@ export default function Home() {
 
               <button
                 type="button"
-                onClick={runLlmAnalysis}
+                onClick={
+                  ()=>{}
+                  // runLlmAnalysis
+                }
                 disabled={isAnalyzing}
                 className="h-10 rounded-md bg-zinc-950 px-4 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
               >
