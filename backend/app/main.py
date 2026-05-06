@@ -1,12 +1,14 @@
 from fastapi import FastAPI
 
 from .core.exception_handlers import register_exception_handlers
+from .core.logging import configure_logging
 from .core.middleware import RequestIdMiddleware
 from .routes.health import router as health_router
 from .routes.products import router as products_router
 
 
 def create_app() -> FastAPI:
+    configure_logging()
     app = FastAPI()
     app.add_middleware(RequestIdMiddleware)
     register_exception_handlers(app)
