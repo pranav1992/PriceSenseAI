@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-OXYLABS_API_URL = os.getenv("OXYLABS_API_URL", "https://api.oxylabs.io/v1/queries")
+OXYLABS_API_URL = os.getenv("OXYLABS_API_URL")
 REQUEST_TIMEOUT_SECONDS = 60
 
 
@@ -24,6 +24,9 @@ def extract_content(payload):
 def post_query(payload):
     username = os.getenv("OXYLABS_USERNAME")
     password = os.getenv("OXYLABS_PASSWORD")
+    if not OXYLABS_API_URL:
+        raise ValueError("OXYLABS_API_URL must be set in the environment")
+
     if not username or not password:
         raise ValueError("OXYLABS_USERNAME and OXYLABS_PASSWORD must be set in the environment")
 
@@ -60,12 +63,12 @@ def normalize_product(content):
     }
 
 
-def scrape_product_details(asin, geo_location, domain):
+def scrape_product_details(asin, geo_location):
     payload = {
         "source": "amazon_product",
         "query": asin,
         "geo_location": geo_location,
-        "domain": domain,
+        # "domain": domain,
         "parse": True,
     }
     response = post_query(payload)
@@ -76,6 +79,10 @@ def scrape_product_details(asin, geo_location, domain):
     if not normalized.get("asin"):
         normalized["asin"] = asin
 
-    normalized["amazon_domain"] = domain
+    # normalized["amazon_domain"] = domain
     normalized["geo_location"] = geo_location
     return normalized
+
+
+if __name__ == "__main__":
+    print(scrape_product_details("B07FZ8S74R", "90210"))
