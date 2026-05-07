@@ -23,6 +23,21 @@ function formatPrice(product: Product) {
   return product.currency ? `${product.currency} ${price}` : price;
 }
 
+function StarRating({ rating }: { rating?: number | string }) {
+  const value = typeof rating === "string" ? parseFloat(rating) : rating;
+  if (!value) return <span className="text-zinc-500">-</span>;
+  const full = Math.floor(value);
+  const half = value - full >= 0.5;
+  return (
+    <span className="flex items-center gap-1 text-sm text-amber-400">
+      {Array.from({ length: 5 }, (_, i) => (
+        <span key={i}>{i < full ? "★" : i === full && half ? "½" : "☆"}</span>
+      ))}
+      <span className="ml-1 text-zinc-400">({value})</span>
+    </span>
+  );
+}
+
 function ProductCard({
   product,
   onAnalyze,
@@ -98,6 +113,54 @@ function ProductCard({
   );
 }
 
+function CompetitorCard({ product }: { product: Product }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const imageUrl = product.images?.[0];
+
+  return (
+    <article className="flex gap-4 rounded-lg border border-zinc-800 bg-zinc-900 p-4 shadow-sm shadow-black/20">
+      <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-md border border-zinc-800 bg-zinc-950">
+        {imageUrl && !imageFailed ? (
+          <img
+            src={imageUrl}
+            alt={product.title ?? product.asin}
+            className="h-full w-full object-contain"
+            onError={() => setImageFailed(true)}
+          />
+        ) : (
+          <span className="text-xs text-zinc-500">No image</span>
+        )}
+      </div>
+
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
+        <div className="flex items-start justify-between gap-2">
+          <h4 className="line-clamp-2 text-sm font-semibold text-zinc-50">
+            {product.title ?? product.asin}
+          </h4>
+          <span className="shrink-0 text-base font-bold text-emerald-400">{formatPrice(product)}</span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-400">
+          {product.brand ? <span>Brand: <span className="text-zinc-300">{product.brand}</span></span> : null}
+          <span>ASIN: <span className="font-mono text-zinc-300">{product.asin}</span></span>
+          <StarRating rating={product.rating} />
+        </div>
+
+        {product.url ? (
+          <a
+            href={product.url}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-auto w-fit truncate text-xs font-medium text-emerald-400 hover:text-emerald-300"
+          >
+            View on Amazon
+          </a>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
 export default function Home() {
   const [asin, setAsin] = useState("");
   const [geo, setGeo] = useState("");
@@ -105,6 +168,8 @@ export default function Home() {
   const [products, setProducts] = useState<Product[]>([]);
   const [page, setPage] = useState(1);
   const [notice, setNotice] = useState<Notice | null>(null);
+  const [competitorMap, setCompetitorMap] = useState<Record<string, Product[]>>({});
+  const [activeCompetitorAsin, setActiveCompetitorAsin] = useState<string | null>(null);
 
   const { mutate: scrape, isPending: isScraping } = useScrapeProduct();
   const { mutate: startAnalysis, isPending: isAnalyzingCompetitors, variables: analyzingVars } =
@@ -119,13 +184,16 @@ export default function Home() {
     [endIndex, products, startIndex],
   );
 
+  const activeProduct = products.find((p) => p.asin === activeCompetitorAsin);
+  const activeCompetitors = activeCompetitorAsin ? (competitorMap[activeCompetitorAsin] ?? []) : [];
+
   function handleScrapeProduct(event: { preventDefault(): void }) {
     event.preventDefault();
     const trimmedAsin = asin.trim();
     if (!trimmedAsin) return;
     setNotice({ tone: "info", message: "Scraping product..." });
     scrape(
-      { asin: trimmedAsin, geoLocation: geo.trim() },
+      { asin: trimmedAsin, geoLocation: geo.trim(), domain },
       {
         onSuccess: (scrapedProducts) => {
           if (scrapedProducts.length === 0) {
@@ -147,66 +215,28 @@ export default function Home() {
     );
   }
 
-  // function startCompetitorAnalysis(nextAsin: string) {
-  //   setSelectedAsin(nextAsin);
-  //   setAnalysis("");
-  //   setNotice({ tone: "info", message: "Searching competitors..." });
-  //   startAnalysis(
-  //     { asin: nextAsin, domain, geoLocation: geo.trim() },
-  //     {
-  //       onSuccess: ({ competitors: found, fromCache }) => {
-  //         setNotice({
-  //           tone: fromCache ? "info" : "success",
-  //           message: fromCache
-  //             ? `Found ${found.length} existing competitors in the database.`
-  //             : `Found ${found.length} competitors!`,
-  //         });
-  //       },
-  //       onError: (error) => {
-  //         setNotice({
-  //           tone: "error",
-  //           message: error instanceof Error ? error.message : "Competitor search failed.",
-  //         });
-  //       },
-  //     },
-  //   );
-  // }
-
-  // function refreshCompetitors() {
-  //   if (!selectedAsin) return;
-  //   setNotice({ tone: "info", message: "Refreshing competitors..." });
-  //   refreshComps(
-  //     { asin: selectedAsin, domain, geoLocation: geo.trim() },
-  //     {
-  //       onSuccess: (data) => {
-  //         setNotice({ tone: "success", message: `Found ${data.length} competitors!` });
-  //       },
-  //       onError: (error) => {
-  //         setNotice({
-  //           tone: "error",
-  //           message: error instanceof Error ? error.message : "Competitor refresh failed.",
-  //         });
-  //       },
-  //     },
-  //   );
-  // }
-
-  // function handleRunLlmAnalysis() {
-  //   if (!selectedAsin) return;
-  //   setNotice({ tone: "info", message: "Running LLM analysis..." });
-  //   runAnalysis(selectedAsin, {
-  //     onSuccess: (result) => {
-  //       setAnalysis(result);
-  //       setNotice({ tone: "success", message: "LLM analysis completed." });
-  //     },
-  //     onError: (error) => {
-  //       setNotice({
-  //         tone: "error",
-  //         message: error instanceof Error ? error.message : "LLM analysis failed.",
-  //       });
-  //     },
-  //   });
-  // }
+  function handleAnalyze(productAsin: string) {
+    setNotice({ tone: "info", message: "Searching for competitors..." });
+    startAnalysis(
+      { asin: productAsin, domain, geoLocation: geo.trim() },
+      {
+        onSuccess: ({ competitors }) => {
+          setCompetitorMap((prev) => ({ ...prev, [productAsin]: competitors }));
+          setActiveCompetitorAsin(productAsin);
+          setNotice({
+            tone: "success",
+            message: `Found ${competitors.length} competitors.`,
+          });
+        },
+        onError: (error) => {
+          setNotice({
+            tone: "error",
+            message: error instanceof Error ? error.message : "Competitor search failed.",
+          });
+        },
+      },
+    );
+  }
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100">
@@ -313,79 +343,39 @@ export default function Home() {
                   key={product.asin}
                   product={product}
                   isAnalyzing={isAnalyzingCompetitors && analyzingVars?.asin === product.asin}
-                  onAnalyze={() =>
-                    startAnalysis(
-                      { asin: product.asin, domain, geoLocation: geo.trim() },
-                      {
-                        onSuccess: ({ competitors, fromCache }) => {
-                          setNotice({
-                            tone: fromCache ? "info" : "success",
-                            message: fromCache
-                              ? `Found ${competitors.length} existing competitors in the database.`
-                              : `Found ${competitors.length} competitors!`,
-                          });
-                        },
-                        onError: (error) => {
-                          setNotice({
-                            tone: "error",
-                            message:
-                              error instanceof Error ? error.message : "Competitor search failed.",
-                          });
-                        },
-                      },
-                    )
-                  }
+                  onAnalyze={() => handleAnalyze(product.asin)}
                 />
               ))}
             </div>
           </section>
         ) : null}
 
-{/*
-        {selectedAsin ? (
+        {activeCompetitorAsin && activeCompetitors.length > 0 ? (
           <section className="flex flex-col gap-5 border-t border-zinc-800 pt-6">
-            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+            <div className="flex items-center justify-between gap-4">
               <div>
-                <h2 className="text-2xl font-semibold text-zinc-50">
-                  Competitor analysis for {selectedAsin}
-                </h2>
+                <h2 className="text-2xl font-semibold text-zinc-50">Competitors</h2>
                 <p className="mt-1 text-sm text-zinc-400">
-                  {competitors.length > 0
-                    ? `${competitors.length} competitors loaded.`
-                    : "No competitors loaded yet."}
+                  {activeCompetitors.length} results for{" "}
+                  <span className="text-zinc-300">{activeProduct?.title ?? activeCompetitorAsin}</span>
                 </p>
               </div>
-
               <button
                 type="button"
-                onClick={refreshCompetitors}
-                disabled={isSearchingCompetitors || isRefreshing}
-                className="h-10 rounded-md border border-zinc-700 bg-zinc-900 px-4 text-sm font-semibold text-zinc-100 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:text-zinc-500"
+                onClick={() => setActiveCompetitorAsin(null)}
+                className="text-sm text-zinc-500 hover:text-zinc-300"
               >
-                {isRefreshing ? "Refreshing..." : "Refresh Competitors"}
+                Dismiss
               </button>
             </div>
 
-            <div className="flex flex-col gap-4 rounded-lg border border-zinc-800 bg-zinc-900 p-4 shadow-sm shadow-black/20 lg:flex-row lg:items-start lg:justify-between">
-              <div className="min-h-24 flex-1 rounded-md border border-zinc-800 bg-zinc-950 p-4">
-                {analysis ? (
-                  <div className="whitespace-pre-wrap text-sm leading-6 text-zinc-200">{analysis}</div>
-                ) : (
-                  <p className="text-sm text-zinc-500">Analysis output will appear here.</p>
-                )}
-              </div>
-
-              <button
-                type="button"
-                onClick={handleRunLlmAnalysis}
-                disabled={isAnalyzing}
-                className="h-10 rounded-md bg-zinc-100 px-4 text-sm font-semibold text-zinc-950 transition hover:bg-white disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
-              >
-                {isAnalyzing ? "Running LLM..." : "Analyze with LLM"}
-              </button>
+            <div className="flex flex-col gap-3">
+              {activeCompetitors.map((competitor) => (
+                <CompetitorCard key={competitor.asin} product={competitor} />
+              ))}
             </div>
           </section>
-        ) : null} */}
+        ) : null}
       </div>
     </main>
   );

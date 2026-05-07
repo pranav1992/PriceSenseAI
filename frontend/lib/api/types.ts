@@ -7,6 +7,7 @@ export type Product = {
   images?: string[];
   currency?: string;
   price?: number | string;
+  rating?: number | string;
   brand?: string;
   product?: string;
   amazon_domain?: string;
@@ -29,6 +30,10 @@ export function normalizeProduct(value: unknown): Product | null {
     price:
       typeof value.price === "number" || typeof value.price === "string"
         ? value.price
+        : undefined,
+    rating:
+      typeof value.rating === "number" || typeof value.rating === "string"
+        ? value.rating
         : undefined,
     brand: stringValue(value.brand),
     product: stringValue(value.product),

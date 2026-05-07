@@ -26,8 +26,8 @@ export function useStartCompetitorAnalysis() {
       domain: string;
       geoLocation: string;
     }) => {
-      const existing = await getCompetitors(asin);
-      if (existing.length > 0) return { competitors: existing, fromCache: true };
+      // const existing = await getCompetitors(asin);
+      // if (existing.length > 0) return { competitors: existing, fromCache: true };
       const fetched = await fetchCompetitors(asin, domain, geoLocation);
       return { competitors: fetched, fromCache: false };
     },

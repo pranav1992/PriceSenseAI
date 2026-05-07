@@ -1,3 +1,4 @@
+import logging
 import os
 
 import requests
@@ -5,8 +6,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-OXYLABS_API_URL = os.getenv("OXYLABS_API_URL")
-REQUEST_TIMEOUT_SECONDS = 60
+logger = logging.getLogger(__name__)
+
+OXYLABS_API_URL = os.getenv("OXYLABS_API_URL", "https://realtime.oxylabs.io/v1/queries")
+REQUEST_TIMEOUT_SECONDS = 120
+SEARCH_STRATEGIES = ["featured", "price_low_to_high", "price_high_to_low", "average_review"]
 
 
 def extract_content(payload):
@@ -17,15 +21,12 @@ def extract_content(payload):
                 return first["content"] or {}
         if "content" in payload:
             return payload.get("content", {})
-
     return payload
 
 
 def post_query(payload):
     username = os.getenv("OXYLABS_USERNAME")
     password = os.getenv("OXYLABS_PASSWORD")
-    if not OXYLABS_API_URL:
-        raise ValueError("OXYLABS_API_URL must be set in the environment")
 
     if not username or not password:
         raise ValueError("OXYLABS_USERNAME and OXYLABS_PASSWORD must be set in the environment")
@@ -63,12 +64,12 @@ def normalize_product(content):
     }
 
 
-def scrape_product_details(asin, geo_location):
+def scrape_product_details(asin, geo_location, domain="com"):
     payload = {
         "source": "amazon_product",
         "query": asin,
+        "domain": domain,
         "geo_location": geo_location,
-        # "domain": domain,
         "parse": True,
     }
     response = post_query(payload)
@@ -79,58 +80,103 @@ def scrape_product_details(asin, geo_location):
     if not normalized.get("asin"):
         normalized["asin"] = asin
 
-    # normalized["amazon_domain"] = domain
+    normalized["amazon_domain"] = domain
     normalized["geo_location"] = geo_location
     return normalized
 
 
-def normalize_competitor(item: dict) -> dict:
-    # amazon_search prices are plain numbers; amazon_product returns dicts
-    price_data = item.get("price")
-    price = price_data.get("value") if isinstance(price_data, dict) else price_data
+def clean_product_name(title: str) -> str:
+    """Strip marketing suffixes after '-' or '|' for a cleaner search query."""
+    if "-" in title:
+        title = title.split("-")[0]
+    if "|" in title:
+        title = title.split("|")[0]
+    return title.strip()
 
-    images = item.get("images") or []
-    if isinstance(images, str):
-        images = [images]
 
+def extract_search_results(content: dict) -> list:
+    items = []
+    if not isinstance(content, dict):
+        return items
+
+    if "results" in content:
+        results = content["results"]
+        if isinstance(results, dict):
+            items.extend(results.get("organic") or [])
+            items.extend(results.get("paid") or [])
+    elif isinstance(content.get("products"), list):
+        items.extend(content["products"])
+
+    return items
+
+
+def normalize_search_result(item: dict, domain: str) -> dict | None:
+    asin = item.get("asin") or item.get("product_asin")
+    title = item.get("title")
+    if not asin:
+        return None
     return {
-        "asin": item.get("asin"),
-        "title": item.get("title"),
-        "url": item.get("url"),
-        "brand": item.get("brand"),
-        "price": price,
+        "asin": asin,
+        "title": title,
+        "price": item.get("price"),
         "currency": item.get("currency"),
         "rating": item.get("rating"),
-        "images": [img for img in images if isinstance(img, str)],
+        "images": item.get("images") or [],
+        "brand": item.get("brand"),
+        "url": f"https://www.amazon.{domain}/dp/{asin}",
+        "amazon_domain": domain,
     }
 
 
-def scrape_competitors(asin: str, domain: str, geo_location: str) -> list:
+def search_competitors(query_title: str, domain: str, geo_location: str = "") -> list:
+    """
+    Single featured search for competitors by cleaned product title.
+    Returns a deduplicated list of competitor dicts with constructed URLs.
+    """
+    search_query = clean_product_name(query_title)
+    logger.info("Searching competitors for query=%r domain=%s", search_query, domain)
+
     payload = {
         "source": "amazon_search",
+        "query": search_query,
         "domain": domain,
-        "query": asin,
+        "start_page": 1,
         "pages": 1,
         "parse": True,
-        "context": [
-            {"key": "currency", "value": "USD"},
-            {"key": "sort_by", "value": "featured"},
-        ],
+        "sort_by": SEARCH_STRATEGIES[0],
     }
     if geo_location:
         payload["geo_location"] = geo_location
 
-    response = post_query(payload)
-    response.raise_for_status()
+    content = extract_content(post_query(payload).json())
 
-    content = extract_content(response.json())
-    organic = []
-    if isinstance(content, dict):
-        results = content.get("results") or {}
-        organic = results.get("organic") if isinstance(results, dict) else []
+    results = []
+    seen_asins: set[str] = set()
+    for item in extract_search_results(content):
+        result = normalize_search_result(item, domain)
+        if result and result["asin"] not in seen_asins:
+            seen_asins.add(result["asin"])
+            results.append(result)
 
-    return [normalize_competitor(item) for item in (organic or []) if item.get("asin")]
+    logger.info("Found %d competitors", len(results))
+    return results
+
+
+def scrape_competitors(asin: str, domain: str, geo_location: str) -> list:
+    """
+    Competitor pipeline (2 API calls total):
+      1. Scrape the source product to get its title.
+      2. Search Amazon by cleaned title and return results directly.
+    """
+    source = scrape_product_details(asin, geo_location, domain)
+    title = source.get("title") or asin
+
+    return [
+        c for c in search_competitors(title, domain, geo_location)
+        if c.get("asin") != asin
+    ]
 
 
 if __name__ == "__main__":
-    print(scrape_product_details("B07FZ8S74R", "90210"))
+    import pprint
+    pprint.pprint(scrape_product_details("B07FZ8S74R", "90210"))

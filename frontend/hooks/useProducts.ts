@@ -13,8 +13,8 @@ export function useScrapeProduct() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ asin, geoLocation }: { asin: string; geoLocation: string }) =>
-      scrapeProduct(asin, geoLocation),
+    mutationFn: ({ asin, geoLocation, domain }: { asin: string; geoLocation: string; domain: string }) =>
+      scrapeProduct(asin, geoLocation, domain),
     onSuccess: (incoming) => {
       queryClient.setQueryData<Product[]>(PRODUCTS_KEY, (current = []) =>
         incoming.length > 0 ? mergeProducts(current, incoming) : current,

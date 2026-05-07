@@ -8,7 +8,7 @@ router = APIRouter()
 
 @router.post("/scrape")
 def scrape_product_endpoint(request: ScrapeProductRequest):
-    product = scrape_product(request.asin, request.geo_location)
+    product = scrape_product(request.asin, request.geo_location, request.domain)
     return {"product": product}
 
 

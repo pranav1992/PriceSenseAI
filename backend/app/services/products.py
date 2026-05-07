@@ -10,9 +10,9 @@ from .product_exceptions import (
 )
 
 
-def scrape_product(asin: str, geo_location: str):
+def scrape_product(asin: str, geo_location: str, domain: str = "com"):
     try:
-        return scrape_product_details(asin, geo_location)
+        return scrape_product_details(asin, geo_location, domain)
     except ValueError as exc:
         raise ProductScrapeConfigurationError() from exc
     except requests.Timeout as exc:
