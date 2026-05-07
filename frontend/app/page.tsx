@@ -4,6 +4,7 @@
 
 import { useMemo, useState } from "react";
 
+import { useStartCompetitorAnalysis } from "../hooks/useCompetitors";
 import { useScrapeProduct } from "../hooks/useProducts";
 import { mergeProducts, type Product } from "../lib/api";
 
@@ -22,7 +23,15 @@ function formatPrice(product: Product) {
   return product.currency ? `${product.currency} ${price}` : price;
 }
 
-function ProductCard({ product }: { product: Product }) {
+function ProductCard({
+  product,
+  onAnalyze,
+  isAnalyzing,
+}: {
+  product: Product;
+  onAnalyze?: () => void;
+  isAnalyzing?: boolean;
+}) {
   const [imageFailed, setImageFailed] = useState(false);
   const imageUrl = product.images?.[0];
   const domainInfo = `amazon.${product.amazon_domain ?? "com"}`;
@@ -75,6 +84,15 @@ function ProductCard({ product }: { product: Product }) {
             {product.url}
           </a>
         ) : null}
+
+        <button
+          type="button"
+          onClick={onAnalyze}
+          disabled={!onAnalyze || isAnalyzing}
+          className="mt-auto h-10 w-full rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+        >
+          {isAnalyzing ? "Analyzing..." : "Start Analyzing Competitors"}
+        </button>
       </div>
     </article>
   );
@@ -89,6 +107,8 @@ export default function Home() {
   const [notice, setNotice] = useState<Notice | null>(null);
 
   const { mutate: scrape, isPending: isScraping } = useScrapeProduct();
+  const { mutate: startAnalysis, isPending: isAnalyzingCompetitors, variables: analyzingVars } =
+    useStartCompetitorAnalysis();
 
   const totalPages = Math.max(1, Math.ceil(products.length / ITEMS_PER_PAGE));
   const currentPage = Math.min(page, totalPages);
@@ -289,7 +309,33 @@ export default function Home() {
 
             <div className="flex flex-col gap-4">
               {visibleProducts.map((product) => (
-                <ProductCard key={product.asin} product={product} />
+                <ProductCard
+                  key={product.asin}
+                  product={product}
+                  isAnalyzing={isAnalyzingCompetitors && analyzingVars?.asin === product.asin}
+                  onAnalyze={() =>
+                    startAnalysis(
+                      { asin: product.asin, domain, geoLocation: geo.trim() },
+                      {
+                        onSuccess: ({ competitors, fromCache }) => {
+                          setNotice({
+                            tone: fromCache ? "info" : "success",
+                            message: fromCache
+                              ? `Found ${competitors.length} existing competitors in the database.`
+                              : `Found ${competitors.length} competitors!`,
+                          });
+                        },
+                        onError: (error) => {
+                          setNotice({
+                            tone: "error",
+                            message:
+                              error instanceof Error ? error.message : "Competitor search failed.",
+                          });
+                        },
+                      },
+                    )
+                  }
+                />
               ))}
             </div>
           </section>

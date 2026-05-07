@@ -10,3 +10,5 @@ router = APIRouter()
 def scrape_product_endpoint(request: ScrapeProductRequest):
     product = scrape_product(request.asin, request.geo_location)
     return {"product": product}
+
+
