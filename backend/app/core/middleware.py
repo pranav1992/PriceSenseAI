@@ -9,7 +9,7 @@ REQUEST_ID_HEADER = "X-Request-ID"
 access_logger = logging.getLogger("backend.access")
 
 
-class RequestIdMiddleware:
+class RequestTracingMiddleware:
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
 
