@@ -3,9 +3,11 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .core.database import Base, engine
 from .core.exception_handlers import register_exception_handlers
 from .core.logging import configure_logging
 from .core.middleware import RequestTracingMiddleware
+from .models import competitor, product  # noqa: F401 — registers models with Base
 from .routes.competitors import router as competitors_router
 from .routes.health import router as health_router
 from .routes.products import router as products_router
@@ -19,6 +21,7 @@ _CORS_ORIGINS = [
 
 def create_app() -> FastAPI:
     configure_logging()
+    Base.metadata.create_all(bind=engine)
     app = FastAPI()
     app.add_middleware(
         CORSMiddleware,
