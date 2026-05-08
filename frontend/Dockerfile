@@ -13,8 +13,10 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# BACKEND_URL is only needed at runtime via next.config.ts rewrites,
-# not at build time, so no ARG needed here.
+# Must be set at build time — Next.js bakes rewrites() into .next/routes-manifest.json
+ARG BACKEND_URL=http://backend:8000
+ENV BACKEND_URL=$BACKEND_URL
+
 RUN npm run build
 
 
@@ -24,12 +26,10 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-# Copy only what next start needs
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/next.config.ts ./next.config.ts
-COPY --from=builder /app/public ./public 2>/dev/null || true
 
 EXPOSE 3000
 
