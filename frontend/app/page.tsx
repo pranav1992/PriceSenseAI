@@ -4,7 +4,7 @@
 
 import { useMemo, useState } from "react";
 
-import { useStartCompetitorAnalysis } from "../hooks/useCompetitors";
+import { useRefreshCompetitors, useStartCompetitorAnalysis } from "../hooks/useCompetitors";
 import { useScrapeProduct } from "../hooks/useProducts";
 import { mergeProducts, type Product } from "../services";
 
@@ -174,6 +174,7 @@ export default function Home() {
   const { mutate: scrape, isPending: isScraping } = useScrapeProduct();
   const { mutate: startAnalysis, isPending: isAnalyzingCompetitors, variables: analyzingVars } =
     useStartCompetitorAnalysis();
+  const { mutate: refresh, isPending: isRefreshing } = useRefreshCompetitors();
 
   const totalPages = Math.max(1, Math.ceil(products.length / ITEMS_PER_PAGE));
   const currentPage = Math.min(page, totalPages);
@@ -209,6 +210,26 @@ export default function Home() {
           setNotice({
             tone: "error",
             message: error instanceof Error ? error.message : "Product scraping failed.",
+          });
+        },
+      },
+    );
+  }
+
+  function handleRefreshCompetitors() {
+    if (!activeCompetitorAsin) return;
+    setNotice({ tone: "info", message: "Refreshing competitors..." });
+    refresh(
+      { asin: activeCompetitorAsin, domain, geoLocation: geo.trim() },
+      {
+        onSuccess: (competitors) => {
+          setCompetitorMap((prev) => ({ ...prev, [activeCompetitorAsin]: competitors }));
+          setNotice({ tone: "success", message: `Refreshed — ${competitors.length} competitors found.` });
+        },
+        onError: (error) => {
+          setNotice({
+            tone: "error",
+            message: error instanceof Error ? error.message : "Refresh failed.",
           });
         },
       },
@@ -360,13 +381,23 @@ export default function Home() {
                   <span className="text-zinc-300">{activeProduct?.title ?? activeCompetitorAsin}</span>
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setActiveCompetitorAsin(null)}
-                className="text-sm text-zinc-500 hover:text-zinc-300"
-              >
-                Dismiss
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleRefreshCompetitors}
+                  disabled={isRefreshing}
+                  className="h-9 rounded-md border border-zinc-700 bg-zinc-800 px-4 text-sm font-medium text-zinc-200 transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isRefreshing ? "Refreshing..." : "Refresh Competitors"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveCompetitorAsin(null)}
+                  className="text-sm text-zinc-500 hover:text-zinc-300"
+                >
+                  Dismiss
+                </button>
+              </div>
             </div>
 
             <div className="flex flex-col gap-3">

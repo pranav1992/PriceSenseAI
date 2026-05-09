@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { fetchCompetitors, getCompetitors } from "../services";
+import { fetchCompetitors, getCompetitors, refreshCompetitors } from "../services";
 import type { Product } from "../services";
 
 export const competitorsKey = (asin: string) => ["competitors", asin] as const;
@@ -49,7 +49,7 @@ export function useRefreshCompetitors() {
       asin: string;
       domain: string;
       geoLocation: string;
-    }) => fetchCompetitors(asin, domain, geoLocation),
+    }) => refreshCompetitors(asin, domain, geoLocation),
     onSuccess: (competitors, { asin }) => {
       queryClient.setQueryData<Product[]>(competitorsKey(asin), competitors);
     },
