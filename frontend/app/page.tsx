@@ -4,6 +4,7 @@
 
 import { useMemo, useState } from "react";
 
+import { SuggestionsPanel } from "../components/SuggestionsPanel";
 import { useRefreshCompetitors, useStartCompetitorAnalysis } from "../hooks/useCompetitors";
 import { useScrapeProduct } from "../hooks/useProducts";
 import { mergeProducts, type Product } from "../services";
@@ -399,6 +400,11 @@ export default function Home() {
                 </button>
               </div>
             </div>
+
+            <SuggestionsPanel
+              asin={activeCompetitorAsin}
+              currency={activeProduct?.currency}
+            />
 
             <div className="flex flex-col gap-3">
               {activeCompetitors.map((competitor) => (
