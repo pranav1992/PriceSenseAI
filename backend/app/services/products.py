@@ -1,9 +1,8 @@
 import requests
-from sqlalchemy.orm import Session
 
 from ingestion.oxylabs_client.client import scrape_product_details
 
-from ..models.product import Product
+from ..repositories.product import ProductRepository
 from .product_exceptions import (
     ProductScrapeConfigurationError,
     ProductScrapeProviderError,
@@ -12,7 +11,7 @@ from .product_exceptions import (
 )
 
 
-def scrape_product(asin: str, geo_location: str, domain: str = "com", db: Session | None = None):
+def scrape_product(asin: str, geo_location: str, domain: str = "com", repo: ProductRepository | None = None):
     try:
         data = scrape_product_details(asin, geo_location, domain)
     except ValueError as exc:
@@ -25,35 +24,7 @@ def scrape_product(asin: str, geo_location: str, domain: str = "com", db: Sessio
     except requests.RequestException as exc:
         raise ProductScrapeUnavailableError() from exc
 
-    if db is not None:
-        _upsert_product(db, data)
+    if repo is not None:
+        repo.upsert(data)
 
     return data
-
-
-def _upsert_product(db: Session, data: dict) -> None:
-    asin = data.get("asin")
-    if not asin:
-        return
-
-    product = db.get(Product, asin)
-    if product is None:
-        product = Product(asin=asin)
-        db.add(product)
-
-    product.title = data.get("title")
-    product.url = data.get("url")
-    product.brand = data.get("brand")
-    product.price = data.get("price")
-    product.currency = data.get("currency")
-    product.stock = data.get("stock")
-    product.rating = data.get("rating")
-    product.images = data.get("images", [])
-    product.categories = data.get("categories", [])
-    product.category_path = data.get("category_path", [])
-    product.buybox = data.get("buybox", [])
-    product.product_overview = data.get("product_overview", [])
-    product.amazon_domain = data.get("amazon_domain")
-    product.geo_location = data.get("geo_location")
-
-    db.commit()
