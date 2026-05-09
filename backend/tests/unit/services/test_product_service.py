@@ -1,3 +1,5 @@
+from unittest.mock import MagicMock
+
 import pytest
 import requests
 
@@ -13,7 +15,7 @@ pytestmark = pytest.mark.unit
 
 
 def test_scrape_product_returns_scraped_product(monkeypatch, scraped_product):
-    def scrape_product_details(asin, geo_location):
+    def scrape_product_details(asin, geo_location, domain):
         assert asin == scraped_product["asin"]
         assert geo_location == scraped_product["geo_location"]
         return scraped_product
@@ -66,3 +68,24 @@ def test_scrape_product_maps_request_exception(monkeypatch):
 
     with pytest.raises(ProductScrapeUnavailableError):
         products.scrape_product("B07FZ8S74R", "90210")
+
+
+def test_scrape_product_calls_repo_upsert_when_provided(monkeypatch, scraped_product):
+    monkeypatch.setattr(
+        products, "scrape_product_details", lambda *a, **kw: scraped_product
+    )
+    repo = MagicMock()
+
+    products.scrape_product("B07FZ8S74R", "90210", repo=repo)
+
+    repo.upsert.assert_called_once_with(scraped_product)
+
+
+def test_scrape_product_skips_upsert_when_repo_is_none(monkeypatch, scraped_product):
+    monkeypatch.setattr(
+        products, "scrape_product_details", lambda *a, **kw: scraped_product
+    )
+
+    result = products.scrape_product("B07FZ8S74R", "90210", repo=None)
+
+    assert result == scraped_product
