@@ -22,8 +22,10 @@ _RAW_RESULTS = [
 ]
 
 
-def _make_repo():
-    return MagicMock()
+def _make_repo(cached=None):
+    repo = MagicMock()
+    repo.get_by_parent_asin.return_value = cached or []
+    return repo
 
 
 class TestGetCompetitors:
@@ -33,8 +35,7 @@ class TestGetCompetitors:
         mock_row_b = MagicMock()
         mock_row_b.to_dict.return_value = {"asin": "B00COMP0002", "title": "Competitor B"}
 
-        repo = _make_repo()
-        repo.get_by_parent_asin.return_value = [mock_row_a, mock_row_b]
+        repo = _make_repo(cached=[mock_row_a, mock_row_b])
 
         result = get_competitors(_PARENT_ASIN, repo)
 
@@ -45,16 +46,48 @@ class TestGetCompetitors:
         repo.get_by_parent_asin.assert_called_once_with(_PARENT_ASIN)
 
     def test_returns_empty_list_when_no_competitors(self):
-        repo = _make_repo()
-        repo.get_by_parent_asin.return_value = []
-
-        result = get_competitors(_PARENT_ASIN, repo)
-
+        result = get_competitors(_PARENT_ASIN, _make_repo())
         assert result == []
 
 
 class TestFetchCompetitors:
-    def test_returns_scraped_results(self, monkeypatch):
+    # --- cache-hit path ---
+
+    def test_returns_cached_results_without_scraping(self, monkeypatch):
+        mock_row = MagicMock()
+        mock_row.to_dict.return_value = {"asin": "B00COMP0001", "title": "Cached Competitor"}
+        repo = _make_repo(cached=[mock_row])
+
+        scrape_called = []
+        monkeypatch.setattr(
+            competitors_module,
+            "scrape_competitors",
+            lambda *a, **kw: scrape_called.append(True) or [],
+        )
+
+        result = fetch_competitors(_PARENT_ASIN, "com", "90210", repo)
+
+        assert result == [{"asin": "B00COMP0001", "title": "Cached Competitor"}]
+        assert not scrape_called
+        repo.replace_for_parent.assert_not_called()
+
+    def test_cache_hit_returns_all_cached_rows(self, monkeypatch):
+        rows = [MagicMock() for _ in range(3)]
+        for i, row in enumerate(rows):
+            row.to_dict.return_value = {"asin": f"B00COMP000{i}"}
+        repo = _make_repo(cached=rows)
+
+        monkeypatch.setattr(
+            competitors_module, "scrape_competitors", lambda *a, **kw: []
+        )
+
+        result = fetch_competitors(_PARENT_ASIN, "com", "90210", repo)
+
+        assert len(result) == 3
+
+    # --- cache-miss path ---
+
+    def test_scrapes_and_returns_results_on_cache_miss(self, monkeypatch):
         monkeypatch.setattr(
             competitors_module, "scrape_competitors", lambda *a, **kw: _RAW_RESULTS
         )
@@ -64,7 +97,7 @@ class TestFetchCompetitors:
 
         assert result == _RAW_RESULTS
 
-    def test_saves_results_via_repo(self, monkeypatch):
+    def test_saves_scraped_results_to_repo_on_cache_miss(self, monkeypatch):
         monkeypatch.setattr(
             competitors_module, "scrape_competitors", lambda *a, **kw: _RAW_RESULTS
         )
@@ -75,19 +108,21 @@ class TestFetchCompetitors:
         repo.replace_for_parent.assert_called_once_with(_PARENT_ASIN, _RAW_RESULTS)
 
     def test_maps_value_error_to_configuration_error(self, monkeypatch):
-        def raise_value_error(*args, **kwargs):
-            raise ValueError("missing credentials")
-
-        monkeypatch.setattr(competitors_module, "scrape_competitors", raise_value_error)
+        monkeypatch.setattr(
+            competitors_module,
+            "scrape_competitors",
+            lambda *a, **kw: (_ for _ in ()).throw(ValueError("missing credentials")),
+        )
 
         with pytest.raises(ProductScrapeConfigurationError):
             fetch_competitors(_PARENT_ASIN, "com", "90210", _make_repo())
 
     def test_maps_timeout_to_timeout_error(self, monkeypatch):
-        def raise_timeout(*args, **kwargs):
-            raise requests.Timeout("timed out")
-
-        monkeypatch.setattr(competitors_module, "scrape_competitors", raise_timeout)
+        monkeypatch.setattr(
+            competitors_module,
+            "scrape_competitors",
+            lambda *a, **kw: (_ for _ in ()).throw(requests.Timeout()),
+        )
 
         with pytest.raises(ProductScrapeTimeoutError):
             fetch_competitors(_PARENT_ASIN, "com", "90210", _make_repo())
@@ -127,11 +162,10 @@ class TestFetchCompetitors:
             fetch_competitors(_PARENT_ASIN, "com", "90210", _make_repo())
 
     def test_does_not_save_when_scrape_fails(self, monkeypatch):
-        monkeypatch.setattr(
-            competitors_module,
-            "scrape_competitors",
-            lambda *a, **kw: (_ for _ in ()).throw(requests.Timeout()),
-        )
+        def raise_timeout(*args, **kwargs):
+            raise requests.Timeout()
+
+        monkeypatch.setattr(competitors_module, "scrape_competitors", raise_timeout)
         repo = _make_repo()
 
         with pytest.raises(ProductScrapeTimeoutError):

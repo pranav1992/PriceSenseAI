@@ -17,6 +17,10 @@ def get_competitors(parent_asin: str, repo: CompetitorRepository) -> list:
 
 
 def fetch_competitors(asin: str, domain: str, geo_location: str, repo: CompetitorRepository) -> list:
+    cached = repo.get_by_parent_asin(asin)
+    if cached:
+        return [row.to_dict() for row in cached]
+
     try:
         results = scrape_competitors(asin, domain, geo_location)
     except ValueError as exc:
