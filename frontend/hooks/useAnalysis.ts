@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 
-import { analyzeCompetitors } from "../lib/api";
+import { analyzeCompetitors } from "../services";
 
 export function useAnalyzeCompetitors() {
   return useMutation({ mutationFn: analyzeCompetitors });

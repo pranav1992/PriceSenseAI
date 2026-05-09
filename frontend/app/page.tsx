@@ -6,7 +6,7 @@ import { useMemo, useState } from "react";
 
 import { useStartCompetitorAnalysis } from "../hooks/useCompetitors";
 import { useScrapeProduct } from "../hooks/useProducts";
-import { mergeProducts, type Product } from "../lib/api";
+import { mergeProducts, type Product } from "../services";
 
 const DOMAINS = ["com", "ca", "co.uk", "de", "fr", "it", "ae"] as const;
 const ITEMS_PER_PAGE = 10;

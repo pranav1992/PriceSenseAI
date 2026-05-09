@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { getProducts, mergeProducts, scrapeProduct } from "../lib/api";
-import type { Product } from "../lib/api";
+import { getProducts, mergeProducts, scrapeProduct } from "../services";
+import type { Product } from "../services";
 
 export const PRODUCTS_KEY = ["products"] as const;
 

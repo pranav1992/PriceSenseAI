@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { fetchCompetitors, getCompetitors } from "../lib/api";
-import type { Product } from "../lib/api";
+import { fetchCompetitors, getCompetitors } from "../services";
+import type { Product } from "../services";
 
 export const competitorsKey = (asin: string) => ["competitors", asin] as const;
 
