@@ -105,8 +105,8 @@ Dashboard / Client
 ### 1. Clone repo
 
 ```bash
-git clone https://github.com/your-username/pricesense-ai.git
-cd pricesense-ai
+git clone https://github.com/pranav1992/PriceSenseAI.git
+cd PriceSenseAI
 ```
 
 ---
@@ -121,13 +121,61 @@ uv sync
 
 ### 3. Configure environment
 
+Create a `.env` file in the project root:
+
 ```bash
-cp .env.example .env
+OXYLABS_USERNAME=your_username
+OXYLABS_PASSWORD=your_password
+OXYLABS_API_URL=https://realtime.oxylabs.io/v1/queries
 ```
 
 ---
 
-### 4. Run ingestion
+### 4. Run the application
+
+#### Dev — DB in Docker, backend & frontend run locally
+
+Frontend and backend run with hot reload. Only the database runs in Docker.
+
+```bash
+./scripts/dev.sh
+```
+
+| Service | URL |
+|---|---|
+| Frontend | http://localhost:3000 |
+| Backend | http://localhost:8000 |
+| Database | localhost:5432 (Docker) |
+
+Press **Ctrl+C** to stop. The database container keeps running so your data is preserved between sessions. To stop it manually:
+
+```bash
+docker compose stop db
+```
+
+#### Staging — all services in Docker
+
+Mirrors a production-like environment with all three services containerised.
+
+```bash
+./scripts/staging.sh
+```
+
+To run in detached mode:
+
+```bash
+./scripts/staging.sh -d
+```
+
+To stop:
+
+```bash
+docker compose down
+```
+
+---
+
+### 5. Run ingestion
 
 ```bash
 uv run python ingestion/jobs/ingest_products.py
@@ -135,7 +183,7 @@ uv run python ingestion/jobs/ingest_products.py
 
 ---
 
-### 5. Run pipeline (Databricks)
+### 6. Run pipeline (Databricks)
 
 ```bash
 uv run databricks bundle deploy
@@ -146,7 +194,14 @@ uv run databricks bundle deploy
 ## 🧪 Testing
 
 ```bash
-uv run pytest tests/
+cd backend && uv run pytest
+```
+
+Run only unit or integration tests:
+
+```bash
+uv run pytest -m unit
+uv run pytest -m integration
 ```
 
 ---
@@ -300,9 +355,9 @@ PriceSenseAI/
 │   └── data_quality/
 │
 ├── scripts/
-│   ├── setup_local.sh
-│   ├── run_ingestion.sh
-│   └── deploy_databricks.sh
+│   ├── dev.sh             # Dev: DB in Docker, backend + frontend run locally
+│   ├── staging.sh         # Staging: all services in Docker
+│   └── run_backend.sh     # Run backend standalone
 │
 └── docs/
     ├── architecture.md
