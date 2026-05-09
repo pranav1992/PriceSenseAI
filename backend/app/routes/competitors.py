@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from ..core.database import get_db
 from ..repositories.competitor import CompetitorRepository
 from ..schemas.competitors import CompetitorsResponse, FetchCompetitorsRequest
-from ..services.competitors import fetch_competitors, get_competitors
+from ..services.competitors import fetch_competitors, get_competitors, refresh_competitors
 
 router = APIRouter()
 
@@ -28,4 +28,13 @@ def fetch_competitors_endpoint(
     repo: CompetitorRepository = Depends(get_competitor_repo),
 ):
     competitors = fetch_competitors(request.asin, request.domain, request.geo, repo)
+    return {"competitors": competitors}
+
+
+@router.post("/refresh", response_model=CompetitorsResponse)
+def refresh_competitors_endpoint(
+    request: FetchCompetitorsRequest,
+    repo: CompetitorRepository = Depends(get_competitor_repo),
+):
+    competitors = refresh_competitors(request.asin, request.domain, request.geo, repo)
     return {"competitors": competitors}

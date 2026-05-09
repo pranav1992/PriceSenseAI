@@ -212,3 +212,110 @@ class TestFetchCompetitorsEndpoint:
         )
 
         assert response.headers["X-Request-ID"] == "fetch-request-id"
+
+
+class TestRefreshCompetitorsEndpoint:
+    """POST /api/competitors/refresh — always scrapes Oxylabs and overwrites the DB."""
+
+    def test_returns_freshly_scraped_competitors(self, monkeypatch, client):
+        monkeypatch.setattr(
+            competitors_route,
+            "refresh_competitors",
+            lambda asin, domain, geo_location, repo: _SCRAPED_COMPETITORS,
+        )
+
+        response = client.post(
+            "/api/competitors/refresh",
+            json={"asin": "B07PARENT01", "domain": "com", "geo": "90210"},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["competitors"][0]["asin"] == "B00COMP0002"
+        assert body["competitors"][0]["title"] == "Scraped Competitor"
+
+    def test_replaces_existing_cached_competitors(self, monkeypatch, client):
+        """Simulates a refresh when the cache already has stale data."""
+        monkeypatch.setattr(
+            competitors_route,
+            "refresh_competitors",
+            lambda asin, domain, geo_location, repo: _SCRAPED_COMPETITORS,
+        )
+
+        response = client.post(
+            "/api/competitors/refresh",
+            json={"asin": "B07PARENT01", "domain": "com", "geo": "90210"},
+        )
+
+        assert response.status_code == 200
+        asins = {c["asin"] for c in response.json()["competitors"]}
+        assert "B00COMP0002" in asins
+        assert "B00COMP0001" not in asins
+
+    def test_missing_required_fields_returns_422(self, client):
+        response = client.post("/api/competitors/refresh", json={})
+
+        assert response.status_code == 422
+        error = response.json()["error"]
+        assert error["code"] == "VALIDATION_ERROR"
+        fields = {d["field"] for d in error["details"]}
+        assert "body.asin" in fields
+        assert "body.domain" in fields
+        assert "body.geo" in fields
+
+    def test_provider_error_returns_502(self, monkeypatch, client):
+        def raise_provider_error(*args, **kwargs):
+            raise ProductScrapeProviderError("upstream failed")
+
+        monkeypatch.setattr(competitors_route, "refresh_competitors", raise_provider_error)
+
+        response = client.post(
+            "/api/competitors/refresh",
+            json={"asin": "B07PARENT01", "domain": "com", "geo": "90210"},
+        )
+
+        assert response.status_code == 502
+        assert response.json()["error"]["code"] == "PRODUCT_SCRAPE_PROVIDER_ERROR"
+
+    def test_timeout_error_returns_504(self, monkeypatch, client):
+        def raise_timeout(*args, **kwargs):
+            raise ProductScrapeTimeoutError()
+
+        monkeypatch.setattr(competitors_route, "refresh_competitors", raise_timeout)
+
+        response = client.post(
+            "/api/competitors/refresh",
+            json={"asin": "B07PARENT01", "domain": "com", "geo": "90210"},
+        )
+
+        assert response.status_code == 504
+        assert response.json()["error"]["code"] == "PRODUCT_SCRAPE_TIMEOUT"
+
+    def test_asin_is_normalised_before_reaching_service(self, monkeypatch, client):
+        received = {}
+
+        def capture(asin, domain, geo_location, repo):
+            received["asin"] = asin
+            return []
+
+        monkeypatch.setattr(competitors_route, "refresh_competitors", capture)
+
+        client.post(
+            "/api/competitors/refresh",
+            json={"asin": "  b07parent01  ", "domain": "com", "geo": "90210"},
+        )
+
+        assert received["asin"] == "B07PARENT01"
+
+    def test_response_includes_request_id_header(self, monkeypatch, client):
+        monkeypatch.setattr(
+            competitors_route, "refresh_competitors", lambda *a, **kw: []
+        )
+
+        response = client.post(
+            "/api/competitors/refresh",
+            json={"asin": "B07PARENT01", "domain": "com", "geo": "90210"},
+            headers={"X-Request-ID": "refresh-request-id"},
+        )
+
+        assert response.headers["X-Request-ID"] == "refresh-request-id"

@@ -16,6 +16,24 @@ def get_competitors(parent_asin: str, repo: CompetitorRepository) -> list:
     return [r.to_dict() for r in rows]
 
 
+def refresh_competitors(asin: str, domain: str, geo_location: str, repo: CompetitorRepository) -> list:
+    """Always scrapes Oxylabs and overwrites whatever is in the database."""
+    try:
+        results = scrape_competitors(asin, domain, geo_location)
+    except ValueError as exc:
+        raise ProductScrapeConfigurationError() from exc
+    except requests.Timeout as exc:
+        raise ProductScrapeTimeoutError() from exc
+    except requests.HTTPError as exc:
+        upstream_status_code = exc.response.status_code if exc.response is not None else None
+        raise ProductScrapeProviderError(details={"upstream_status_code": upstream_status_code}) from exc
+    except requests.RequestException as exc:
+        raise ProductScrapeUnavailableError() from exc
+
+    repo.replace_for_parent(asin, results)
+    return results
+
+
 def fetch_competitors(asin: str, domain: str, geo_location: str, repo: CompetitorRepository) -> list:
     cached = repo.get_by_parent_asin(asin)
     if cached:
