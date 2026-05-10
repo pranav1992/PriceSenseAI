@@ -1,0 +1,83 @@
+bundle:
+  name: pricesense-ai
+
+variables:
+  storage_path:
+    description: "Cloud storage root (e.g. abfss://container@account.dfs.core.windows.net/pricesense or s3://bucket/pricesense)"
+    default: ""
+  catalog:
+    description: "Unity Catalog catalog name (leave empty to use legacy Hive metastore)"
+    default: ""
+
+targets:
+  dev:
+    mode: development
+    default: true
+    variables:
+      storage_path: ${workspace.file_path}/data   # local workspace storage for dev
+
+  prod:
+    mode: production
+    variables:
+      storage_path: ${var.storage_path}
+
+workspace:
+  # Set DATABRICKS_HOST and DATABRICKS_TOKEN in your environment,
+  # or run: databricks configure
+  root_path: /Shared/pricesense-ai/${bundle.target}
+
+resources:
+  jobs:
+    bronze_ingestion:
+      name: "[PriceSenseAi] Bronze Ingestion"
+      description: "Daily job — reads Oxylabs JSON output and appends to bronze Delta tables"
+      tasks:
+        - task_key: ingest_bronze
+          notebook_task:
+            notebook_path: ./notebooks/01_bronze_ingestion.py
+            base_parameters:
+              storage_path: ${var.storage_path}
+          job_cluster_key: shared_cluster
+      job_clusters:
+        - job_cluster_key: shared_cluster
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: Standard_DS3_v2   # Azure — change to m5.xlarge for AWS
+            num_workers: 1
+      schedule:
+        quartz_cron_expression: "0 0 2 * * ?"   # 02:00 UTC daily
+        timezone_id: UTC
+
+    silver_gold_pipeline:
+      name: "[PriceSenseAi] Silver + Gold Pipeline"
+      description: "Runs after bronze — cleans data into silver, computes features into gold"
+      tasks:
+        - task_key: silver_clean
+          depends_on:
+            - task_key: bronze_ingest_trigger
+          notebook_task:
+            notebook_path: ./notebooks/02_silver_cleaning.py
+            base_parameters:
+              storage_path: ${var.storage_path}
+          job_cluster_key: shared_cluster
+        - task_key: gold_features
+          depends_on:
+            - task_key: silver_clean
+          notebook_task:
+            notebook_path: ./notebooks/03_gold_features.py
+          job_cluster_key: shared_cluster
+        - task_key: bronze_ingest_trigger
+          notebook_task:
+            notebook_path: ./notebooks/01_bronze_ingestion.py
+            base_parameters:
+              storage_path: ${var.storage_path}
+          job_cluster_key: shared_cluster
+      job_clusters:
+        - job_cluster_key: shared_cluster
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: Standard_DS3_v2
+            num_workers: 1
+      schedule:
+        quartz_cron_expression: "0 30 2 * * ?"   # 02:30 UTC daily (30 min after bronze)
+        timezone_id: UTC
