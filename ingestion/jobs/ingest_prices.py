@@ -31,6 +31,7 @@ Output layout (same as ingest_products.py so bronze ingestion picks it up):
 
 import argparse
 import json
+import logging
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -42,6 +43,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from ingestion.oxylabs_client.client import scrape_product_details
+
+logger = logging.getLogger(__name__)
 
 
 def _resolve_output(base: str, sub: str) -> Path:
@@ -71,7 +74,7 @@ def snapshot_price(asin: str, domain: str, geo: str, output_root: str, date_str:
 
     out_path = _resolve_output(output_root, f"products/{date_str}/{asin}.json")
     _write_json(out_path, product)
-    print(f"  [{asin}] price={product.get('price')}  stock={product.get('stock')}  → {out_path}")
+    logger.info("Snapshot written asin=%s price=%s stock=%s path=%s", asin, product.get("price"), product.get("stock"), out_path)
 
 
 def main() -> None:
@@ -80,22 +83,26 @@ def main() -> None:
     group.add_argument("--asin",     help="Single ASIN to snapshot")
     group.add_argument("--manifest", help="Path to a file with one ASIN per line")
 
-    parser.add_argument("--domain",  default="com",   help="Amazon domain (default: com)")
-    parser.add_argument("--geo",     default="10001", help="Zip/postal code for geo-pricing")
-    parser.add_argument("--output",  default="./data", help="Output root path")
-    parser.add_argument("--date",    default="",       help="Scrape date YYYY-MM-DD (default: today UTC)")
+    parser.add_argument("--domain",    default="com",   help="Amazon domain (default: com)")
+    parser.add_argument("--geo",       default="10001", help="Zip/postal code for geo-pricing")
+    parser.add_argument("--output",    default="./data", help="Output root path")
+    parser.add_argument("--date",      default="",       help="Scrape date YYYY-MM-DD (default: today UTC)")
+    parser.add_argument("--log-level", default="INFO",   help="Logging level (default: INFO)")
     args = parser.parse_args()
+
+    logging.basicConfig(
+        level=args.log_level.upper(),
+        format="%(asctime)s %(levelname)s %(name)s — %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%SZ",
+    )
 
     date_str = args.date.strip() or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     asins = [args.asin.strip().upper()] if args.asin else _load_asins(args.manifest)
 
-    print("PriceSenseAi — Daily Price Snapshot Job")
-    print(f"  ASINs  : {len(asins)}")
-    print(f"  Domain : amazon.{args.domain}")
-    print(f"  Geo    : {args.geo}")
-    print(f"  Date   : {date_str}")
-    print(f"  Output : {args.output}")
-    print()
+    logger.info(
+        "PriceSenseAi price snapshot job started asins=%d domain=amazon.%s geo=%s date=%s output=%s",
+        len(asins), args.domain, args.geo, date_str, args.output,
+    )
 
     ok = failed = 0
     for asin in asins:
@@ -103,11 +110,10 @@ def main() -> None:
             snapshot_price(asin, args.domain, args.geo, args.output, date_str)
             ok += 1
         except Exception as exc:
-            print(f"  [{asin}] ERROR: {exc}")
+            logger.error("Snapshot failed asin=%s error=%s", asin, exc, exc_info=True)
             failed += 1
 
-    print(f"\n✓ Done — {ok} snapshots written, {failed} failed.")
-    print("Files are ready for 01_bronze_ingestion.py to pick up.")
+    logger.info("Price snapshot job complete ok=%d failed=%d", ok, failed)
     if failed:
         sys.exit(1)
 

@@ -16,6 +16,7 @@ Output layout (mirrors what 01_bronze_ingestion.py expects):
 
 import argparse
 import json
+import logging
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,6 +28,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from ingestion.oxylabs_client.client import scrape_competitors, scrape_product_details
+
+logger = logging.getLogger(__name__)
 
 
 def _resolve_output(base: str, sub: str) -> Path:
@@ -46,21 +49,19 @@ def _resolve_output(base: str, sub: str) -> Path:
 def _write_json(path: Path, data: dict | list) -> None:
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, default=str)
-    print(f"  Written: {path}")
+    logger.debug("Written: %s", path)
 
 
 def ingest_product(asin: str, domain: str, geo: str, output_root: str, date_str: str) -> None:
-    print(f"\n[{asin}] Scraping product...")
     product = scrape_product_details(asin, geo_location=geo, domain=domain)
     product["scraped_at"] = datetime.now(timezone.utc).isoformat()
 
     out_path = _resolve_output(output_root, f"products/{date_str}/{asin}.json")
     _write_json(out_path, product)
-    print(f"[{asin}] Product saved  price={product.get('price')}  stock={product.get('stock')}")
+    logger.info("Product saved asin=%s price=%s stock=%s path=%s", asin, product.get("price"), product.get("stock"), out_path)
 
 
 def ingest_competitors(asin: str, domain: str, geo: str, output_root: str, date_str: str) -> None:
-    print(f"\n[{asin}] Scraping competitors...")
     competitors = scrape_competitors(asin, domain=domain, geo_location=geo)
 
     fetch_time = datetime.now(timezone.utc).isoformat()
@@ -70,7 +71,7 @@ def ingest_competitors(asin: str, domain: str, geo: str, output_root: str, date_
 
     out_path = _resolve_output(output_root, f"competitors/{date_str}/{asin}_competitors.json")
     _write_json(out_path, competitors)
-    print(f"[{asin}] {len(competitors)} competitor snapshots saved")
+    logger.info("Competitors saved asin=%s count=%d path=%s", asin, len(competitors), out_path)
 
 
 def main() -> None:
@@ -81,23 +82,28 @@ def main() -> None:
     parser.add_argument("--output",           default="./data",help="Output root path (local or cloud)")
     parser.add_argument("--date",             default="",      help="Scrape date YYYY-MM-DD (default: today UTC)")
     parser.add_argument("--skip-competitors", action="store_true", help="Skip competitor scrape")
+    parser.add_argument("--log-level",        default="INFO",  help="Logging level (default: INFO)")
     args = parser.parse_args()
+
+    logging.basicConfig(
+        level=args.log_level.upper(),
+        format="%(asctime)s %(levelname)s %(name)s — %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%SZ",
+    )
 
     asin     = args.asin.strip().upper()
     date_str = args.date.strip() or datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    print("PriceSenseAi — Bronze Ingestion Job")
-    print(f"  ASIN   : {asin}")
-    print(f"  Domain : amazon.{args.domain}")
-    print(f"  Geo    : {args.geo}")
-    print(f"  Date   : {date_str}")
-    print(f"  Output : {args.output}")
+    logger.info(
+        "PriceSenseAi bronze ingestion job started asin=%s domain=amazon.%s geo=%s date=%s output=%s",
+        asin, args.domain, args.geo, date_str, args.output,
+    )
 
     ingest_product(asin, args.domain, args.geo, args.output, date_str)
     if not args.skip_competitors:
         ingest_competitors(asin, args.domain, args.geo, args.output, date_str)
 
-    print("\n✓ Done. Files are ready for 01_bronze_ingestion.py to pick up.")
+    logger.info("Bronze ingestion complete. Files ready for 01_bronze_ingestion.py")
 
 
 if __name__ == "__main__":

@@ -65,6 +65,7 @@ def normalize_product(content):
 
 
 def scrape_product_details(asin, geo_location, domain="com"):
+    logger.info("Scraping product asin=%s domain=%s geo=%s", asin, domain, geo_location)
     payload = {
         "source": "amazon_product",
         "query": asin,
@@ -82,6 +83,7 @@ def scrape_product_details(asin, geo_location, domain="com"):
 
     normalized["amazon_domain"] = domain
     normalized["geo_location"] = geo_location
+    logger.info("Product scraped asin=%s price=%s stock=%s", asin, normalized.get("price"), normalized.get("stock"))
     return normalized
 
 
@@ -168,13 +170,16 @@ def scrape_competitors(asin: str, domain: str, geo_location: str) -> list:
       1. Scrape the source product to get its title.
       2. Search Amazon by cleaned title and return results directly.
     """
+    logger.info("Starting competitor scrape for asin=%s", asin)
     source = scrape_product_details(asin, geo_location, domain)
     title = source.get("title") or asin
 
-    return [
+    results = [
         c for c in search_competitors(title, domain, geo_location)
         if c.get("asin") != asin
     ]
+    logger.info("Competitor scrape complete asin=%s count=%d", asin, len(results))
+    return results
 
 
 if __name__ == "__main__":
