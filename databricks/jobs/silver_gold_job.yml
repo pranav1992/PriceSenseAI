@@ -1,0 +1,85 @@
+# Silver + Gold Pipeline Job — standalone definition
+#
+# This file documents the silver/gold pipeline job configuration.
+# The canonical definition that Databricks Asset Bundles deploys is in ../databricks.yml.
+#
+# Schedule: 02:30 UTC daily (30 min after bronze — gives bronze time to complete)
+#
+# Task DAG:
+#
+#   bronze_trigger ──► silver_clean ──► gold_features
+#
+#   bronze_trigger  : re-runs 01_bronze_ingestion.py (idempotent append, safe to repeat)
+#   silver_clean    : MERGE INTO silver.price_history + silver.competitor_map
+#   gold_features   : window functions → MERGE INTO gold.price_features
+#
+# Note: bronze_trigger exists so this job is self-contained and can be retried
+# without needing the separate bronze job to re-run first.
+
+job:
+  name: "[PriceSenseAi] Silver + Gold Pipeline"
+  description: "Cleans bronze data into silver and computes ML features into gold"
+
+  schedule:
+    quartz_cron_expression: "0 30 2 * * ?"
+    timezone_id: UTC
+    pause_status: UNPAUSED
+
+  tasks:
+    - task_key: bronze_trigger
+      notebook_task:
+        notebook_path: /Shared/pricesense-ai/notebooks/01_bronze_ingestion
+        base_parameters:
+          storage_path: "{{storage_path}}"
+          scrape_date:  ""
+      job_cluster_key: pipeline_cluster
+      timeout_seconds: 1800
+
+    - task_key: silver_clean
+      depends_on:
+        - task_key: bronze_trigger
+      notebook_task:
+        notebook_path: /Shared/pricesense-ai/notebooks/02_silver_cleaning
+        base_parameters:
+          scrape_date: ""
+      job_cluster_key: pipeline_cluster
+      timeout_seconds: 3600
+      max_retries: 1
+      min_retry_interval_millis: 300000
+
+    - task_key: gold_features
+      depends_on:
+        - task_key: silver_clean
+      notebook_task:
+        notebook_path: /Shared/pricesense-ai/notebooks/03_gold_features
+        base_parameters:
+          scrape_date: ""
+      job_cluster_key: pipeline_cluster
+      timeout_seconds: 3600
+      max_retries: 1
+      min_retry_interval_millis: 300000
+
+  job_clusters:
+    - job_cluster_key: pipeline_cluster
+      new_cluster:
+        spark_version: "15.4.x-scala2.12"
+        node_type_id: Standard_DS3_v2
+        num_workers: 1
+        spark_conf:
+          "spark.databricks.delta.preview.enabled": "true"
+          "spark.sql.shuffle.partitions": "8"   # small data: avoid 200-partition default
+        custom_tags:
+          project: pricesense-ai
+          layer: silver-gold
+
+  email_notifications:
+    on_failure:
+      - "{{alert_email}}"
+    on_success:
+      - "{{alert_email}}"
+
+  health:
+    rules:
+      - metric: RUN_DURATION_SECONDS
+        op: GREATER_THAN
+        value: 7200   # alert if full pipeline takes more than 2 hours

@@ -1,0 +1,61 @@
+# Bronze Ingestion Job — standalone definition (also embedded in databricks.yml)
+#
+# This file documents the daily bronze ingestion job configuration.
+# The canonical definition that Databricks Asset Bundles deploys is in ../databricks.yml.
+# Use this file as reference or for manual job creation via the Databricks UI.
+#
+# Schedule: 02:00 UTC daily
+# Cluster:  Single-node, Spark 15.4.x (DBR 15.4 LTS)
+#
+# Steps:
+#   1. ingest_bronze  — runs 01_bronze_ingestion.py
+#      Reads JSON files from {storage_path}/products/{date}/ and /competitors/{date}/
+#      Appends rows to bronze.products and bronze.competitors (append-only Delta tables)
+#
+# Trigger:
+#   Run ingest_products.py (or ingest_prices.py) before this job each day.
+#   In production, orchestrate via Databricks Workflow chaining:
+#     [Cloud Scheduler / Airflow] → ingest_products.py → this job → silver_gold_job.yml
+
+job:
+  name: "[PriceSenseAi] Bronze Ingestion"
+  description: "Reads Oxylabs JSON snapshots and appends to bronze Delta tables"
+
+  schedule:
+    quartz_cron_expression: "0 0 2 * * ?"
+    timezone_id: UTC
+    pause_status: UNPAUSED
+
+  tasks:
+    - task_key: ingest_bronze
+      notebook_task:
+        notebook_path: /Shared/pricesense-ai/notebooks/01_bronze_ingestion
+        base_parameters:
+          storage_path: "{{storage_path}}"
+          scrape_date:  ""          # blank = today UTC
+      job_cluster_key: bronze_cluster
+      timeout_seconds: 1800         # 30 min max
+      max_retries: 1
+      min_retry_interval_millis: 300000   # retry after 5 min
+
+  job_clusters:
+    - job_cluster_key: bronze_cluster
+      new_cluster:
+        spark_version: "15.4.x-scala2.12"
+        node_type_id: Standard_DS3_v2      # Azure; use m5.xlarge for AWS
+        num_workers: 1
+        spark_conf:
+          "spark.databricks.delta.preview.enabled": "true"
+        custom_tags:
+          project: pricesense-ai
+          layer: bronze
+
+  email_notifications:
+    on_failure:
+      - "{{alert_email}}"
+
+  health:
+    rules:
+      - metric: RUN_DURATION_SECONDS
+        op: GREATER_THAN
+        value: 1800   # alert if job takes more than 30 min
