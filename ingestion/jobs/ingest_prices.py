@@ -42,24 +42,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import fsspec
+
 from ingestion.oxylabs_client.client import scrape_product_details
 
 logger = logging.getLogger(__name__)
 
 
-def _resolve_output(base: str, sub: str) -> Path:
-    if base.startswith(("s3://", "abfss://", "gs://")):
-        raise NotImplementedError(
-            f"Cloud path '{base}' detected. "
-            "Replace _resolve_output() with a cloud write helper (boto3, azure-storage-blob, etc.)."
-        )
-    path = Path(base) / sub
-    path.parent.mkdir(parents=True, exist_ok=True)
-    return path
-
-
-def _write_json(path: Path, data: dict | list) -> None:
-    with open(path, "w", encoding="utf-8") as f:
+def _write_json(base: str, sub: str, data: dict | list) -> None:
+    path = f"{base.rstrip('/')}/{sub}"
+    with fsspec.open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, default=str)
 
 
@@ -72,9 +64,9 @@ def snapshot_price(asin: str, domain: str, geo: str, output_root: str, date_str:
     product = scrape_product_details(asin, geo_location=geo, domain=domain)
     product["scraped_at"] = datetime.now(timezone.utc).isoformat()
 
-    out_path = _resolve_output(output_root, f"products/{date_str}/{asin}.json")
-    _write_json(out_path, product)
-    logger.info("Snapshot written asin=%s price=%s stock=%s path=%s", asin, product.get("price"), product.get("stock"), out_path)
+    sub = f"products/{date_str}/{asin}.json"
+    _write_json(output_root, sub, product)
+    logger.info("Snapshot written asin=%s price=%s stock=%s", asin, product.get("price"), product.get("stock"))
 
 
 def main() -> None:

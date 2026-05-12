@@ -1,0 +1,4 @@
+# PriceSenseAi — tracked ASINs (one per line)
+# Lines starting with # are ignored.
+# Add each ASIN you want scraped daily on its own line.
+B0FY52GZFG

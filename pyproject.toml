@@ -5,8 +5,11 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "adlfs>=2024.2.0",
     "dotenv>=0.9.9",
+    "fsspec>=2024.2.0",
     "requests>=2.33.1",
+    "s3fs>=2024.2.0",
 ]
 
 [tool.uv.workspace]

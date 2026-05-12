@@ -1,141 +1,120 @@
-# 🚀 PriceSense AI
+# PriceSense AI
 
 ### Real-Time Product Intelligence & Competitor Analysis Platform
 
 ---
 
-## 📌 Overview
+## Overview
 
-**PriceSense AI** is a production-grade data platform that ingests product data from external sources (Oxylabs), processes it using a **Medallion Architecture (Bronze → Silver → Gold)** on Databricks, and provides **AI-powered insights and analytics** using LLMs.
-
-The system enables **real-time competitor analysis, price tracking, and intelligent decision-making** for e-commerce products.
+**PriceSense AI** is a production-grade data platform that ingests product data from Oxylabs, processes it using a **Medallion Architecture (Bronze → Silver → Gold)** on Databricks, and provides AI-powered price insights and competitor analytics for e-commerce products.
 
 ---
 
-## 🧠 Key Features
+## Key Features
 
-* 📡 Data ingestion from Oxylabs APIs
-* 🏗️ Medallion Architecture (Delta Lake)
-* 🔄 Scalable data pipelines (Databricks + Spark)
-* 📊 Time-series price tracking & forecasting
-* 🤖 LLM-based product analysis & insights
-* 📉 Competitor price monitoring
-* 🚨 Alerting system (price drops, anomalies)
-* 📈 Analytics dashboards
+* Daily automated scraping via Oxylabs API (products + competitors)
+* Medallion Architecture on Delta Lake (Bronze → Silver → Gold)
+* End-to-end Databricks Workflows — no external scheduler required
+* Time-series price tracking with 7-day rolling features
+* XGBoost price optimisation model tracked in MLflow
+* Competitor price ranking and market position scoring
+* FastAPI backend serving gold-layer features
+* React/Next.js analytics dashboard with chat interface
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
-```text
+```
 Oxylabs API
+     ↓  [scrape_raw — 01:00 UTC]
+JSON snapshots in cloud storage (S3 / ADLS)
+     ↓  [ingest_bronze]
+Bronze Delta tables  (append-only, immutable)
+     ↓  [silver_clean]
+Silver Delta tables  (deduplicated, MERGE INTO)
+     ↓  [gold_features]
+Gold Delta table     (ML-ready features, suggested prices)
      ↓
-Ingestion Layer
-     ↓
-Bronze Layer (Raw Data)
-     ↓
-Silver Layer (Cleaned & Structured)
-     ↓
-Gold Layer (Business Insights)
-     ↓
-LLM Analyzer + API Layer
-     ↓
-Dashboard / Client
+FastAPI  →  React dashboard
 ```
 
----
-
-## 🧱 Tech Stack
-
-* **Data Ingestion:** Oxylabs API
-* **Processing:** Apache Spark (Databricks)
-* **Storage:** Delta Lake
-* **Orchestration:** Airflow / Databricks Workflows
-* **Backend API:** FastAPI
-* **LLM Layer:** OpenAI / Local LLM + Vector DB
-* **Visualization:** Power BI / Databricks SQL
+All four stages run as a single Databricks job, sequentially, scheduled at **01:00 UTC daily**.
 
 ---
 
-## 📊 Data Model
+## Tech Stack
 
-### Bronze Layer
-
-* Raw product data
-* Raw price snapshots
-* Raw reviews
-
-### Silver Layer
-
-* Cleaned products
-* Normalized pricing
-* Deduplicated records
-* Competitor mapping
-
-### Gold Layer
-
-* Competitor price comparison
-* Price trends & features
-* Product insights
-* Forecasting outputs
+| Layer | Technology |
+|---|---|
+| Scraping | Oxylabs Realtime API |
+| Orchestration | Databricks Workflows (Asset Bundles) |
+| Processing | Apache Spark 15.4 LTS (Databricks) |
+| Storage | Delta Lake (Unity Catalog or Hive metastore) |
+| ML | XGBoost + MLflow Model Registry |
+| Backend API | FastAPI + PostgreSQL |
+| Frontend | Next.js + Tailwind CSS |
 
 ---
 
-## 🔍 Use Cases
+## Data Model
 
-* 📉 Track competitor price changes
-* 📦 Monitor product demand trends
-* 🧠 Generate AI-driven product insights
-* 🚨 Detect anomalies in pricing or availability
-* 📊 Build dashboards for decision-making
+### Bronze (append-only)
+| Table | Description |
+|---|---|
+| `bronze.products` | Raw product snapshots from Oxylabs |
+| `bronze.competitors` | Raw competitor search results |
+
+### Silver (deduplicated)
+| Table | Description |
+|---|---|
+| `silver.price_history` | One row per `(asin, scrape_date, source)` |
+| `silver.competitor_map` | Competitor pricing landscape with price rank and % diff |
+
+### Gold (ML-ready)
+| Table | Description |
+|---|---|
+| `gold.price_features` | 7-day rolling features, competitive signals, `suggested_price` |
 
 ---
 
-## 🤖 LLM Capabilities
+## Setup
 
-* Product comparison summaries
-* Price trend explanations
-* Market insights generation
-* Conversational analytics (chat interface)
-
----
-
-## ⚙️ Setup
-
-### 1. Clone repo
+### 1. Clone & install
 
 ```bash
 git clone https://github.com/pranav1992/PriceSenseAI.git
 cd PriceSenseAI
-```
-
----
-
-### 2. Install dependencies
-
-```bash
 uv sync
 ```
 
----
-
-### 3. Configure environment
-
-Create a `.env` file in the project root:
+### 2. Configure environment
 
 ```bash
+# .env (project root)
 OXYLABS_USERNAME=your_username
 OXYLABS_PASSWORD=your_password
 OXYLABS_API_URL=https://realtime.oxylabs.io/v1/queries
+
+DATABASE_URL=postgresql://pricesense:pricesense@localhost:5432/pricesense
+CORS_ORIGINS=http://localhost:3000
+
+DATABRICKS_HOST=https://<workspace>.azuredatabricks.net
+DATABRICKS_TOKEN=<personal-access-token>
 ```
 
----
+### 3. Add tracked ASINs
 
-### 4. Run the application
+Edit `ingestion/asins.txt` — one ASIN per line:
 
-#### Dev — DB in Docker, backend & frontend run locally
+```
+B0FY52GZFG
+B08N5WRWNW
+```
 
-Frontend and backend run with hot reload. Only the database runs in Docker.
+### 4. Run locally (dev)
+
+Frontend, backend, and database:
 
 ```bash
 ./scripts/dev.sh
@@ -144,246 +123,150 @@ Frontend and backend run with hot reload. Only the database runs in Docker.
 | Service | URL |
 |---|---|
 | Frontend | http://localhost:3000 |
-| Backend | http://localhost:8000 |
-| Database | localhost:5432 (Docker) |
+| Backend API | http://localhost:8000 |
+| Database | localhost:5432 |
 
-Press **Ctrl+C** to stop. The database container keeps running so your data is preserved between sessions. To stop it manually:
+### 5. Run ingestion locally
 
 ```bash
-docker compose stop db
+# Single ASIN
+uv run python ingestion/jobs/ingest_products.py --asin B0FY52GZFG --output ./data
+
+# All tracked ASINs
+uv run python ingestion/jobs/ingest_products.py --manifest ingestion/asins.txt --output ./data
 ```
 
-#### Staging — all services in Docker
+Writes to `./data/products/YYYY-MM-DD/{asin}.json` and `./data/competitors/YYYY-MM-DD/{asin}_competitors.json`.
 
-Mirrors a production-like environment with all three services containerised.
+---
+
+## Databricks Deployment
+
+### 1. Create secret scope for Oxylabs credentials
 
 ```bash
-./scripts/staging.sh
+databricks secrets create-scope pricesense
+databricks secrets put-secret pricesense OXYLABS_USERNAME --string-value <username>
+databricks secrets put-secret pricesense OXYLABS_PASSWORD --string-value <password>
 ```
 
-To run in detached mode:
+### 2. Deploy the pipeline
 
 ```bash
-./scripts/staging.sh -d
+# Development workspace
+databricks bundle deploy --target dev
+
+# Production
+databricks bundle deploy --target prod \
+  --var storage_path=s3://your-bucket/pricesense
 ```
 
-To stop:
+This deploys two jobs to your Databricks workspace:
+
+| Job | Schedule | Purpose |
+|---|---|---|
+| `[PriceSenseAi] Full Pipeline` | 01:00 UTC daily | scrape → bronze → silver → gold |
+| `[PriceSenseAi] Bronze Ingestion (manual)` | unscheduled | re-ingest a specific date ad-hoc |
+
+### 3. Run manually
 
 ```bash
-docker compose down
+databricks bundle run full_pipeline --target dev
+```
+
+### Pipeline task DAG
+
+```
+scrape_raw  →  ingest_bronze  →  silver_clean  →  gold_features
 ```
 
 ---
 
-### 5. Run ingestion
+## ML Model
 
-```bash
-uv run python ingestion/jobs/ingest_products.py
+Train the XGBoost price optimisation model (run weekly or on-demand in Databricks):
+
 ```
+databricks/notebooks/04_price_model.py
+```
+
+Logs metrics and registers the model in the MLflow Model Registry as `PriceOptimizationModel`. The FastAPI backend serves predictions from the registered model.
 
 ---
 
-### 6. Run pipeline (Databricks)
+## Testing
 
 ```bash
-uv run databricks bundle deploy
-```
-
----
-
-## 🧪 Testing
-
-```bash
+# All tests
 cd backend && uv run pytest
-```
 
-Run only unit or integration tests:
-
-```bash
+# Unit or integration only
 uv run pytest -m unit
 uv run pytest -m integration
 ```
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
-```text
+```
 PriceSenseAI/
-│
-├── README.md
-├── .env.example
-├── pyproject.toml
-├── requirements.txt
-├── docker-compose.yml
-│
-├── configs/
-│   ├── dev.yml
-│   ├── prod.yml
-│   └── sources.yml
-│
 ├── ingestion/
-│   ├── oxylabs_client/
-│   │   ├── __init__.py
-│   │   ├── client.py
-│   │   ├── schemas.py
-│   │   └── exceptions.py
-│   │
+│   ├── asins.txt                  # Tracked ASINs — one per line
 │   ├── jobs/
-│   │   ├── ingest_products.py
-│   │   ├── ingest_prices.py
-│   │   └── ingest_reviews.py
-│   │
-│   └── tests/
+│   │   ├── ingest_products.py     # Full product + competitor scrape
+│   │   ├── ingest_prices.py       # Lightweight price-only snapshot
+│   │   └── ingest_reviews.py      # (placeholder)
+│   └── oxylabs_client/
+│       └── client.py              # Oxylabs API wrapper
 │
 ├── databricks/
+│   ├── databricks.yml             # Asset Bundle — job definitions (canonical)
 │   ├── notebooks/
 │   │   ├── 01_bronze_ingestion.py
 │   │   ├── 02_silver_cleaning.py
-│   │   ├── 03_gold_analytics.py
-│   │   └── 04_forecasting.py
-│   │
+│   │   ├── 03_gold_features.py
+│   │   └── 04_price_model.py
 │   ├── jobs/
-│   │   ├── bronze_job.yml
-│   │   ├── silver_job.yml
-│   │   └── gold_job.yml
-│   │
-│   ├── sql/
-│   │   ├── create_tables.sql
-│   │   ├── gold_views.sql
-│   │   └── quality_checks.sql
-│   │
-│   └── databricks.yml
+│   │   ├── bronze_job.yml         # Reference doc (not deployed directly)
+│   │   └── silver_gold_job.yml    # Reference doc (not deployed directly)
+│   └── sql/
+│       ├── create_tables.sql
+│       └── quality_checks.sql
 │
-├── pipelines/
-│   ├── bronze/
-│   │   ├── load_raw_products.py
-│   │   └── load_raw_prices.py
-│   │
-│   ├── silver/
-│   │   ├── clean_products.py
-│   │   ├── normalize_prices.py
-│   │   ├── deduplicate.py
-│   │   └── product_matching.py
-│   │
-│   └── gold/
-│       ├── competitor_summary.py
-│       ├── price_history_features.py
-│       ├── product_rankings.py
-│       └── anomaly_detection.py
-│
-|
-├── llm_analyzer/
-│   ├── __init__.py
-│   ├── prompts/
-│   │   ├── product_analysis.md
-│   │   ├── competitor_summary.md
-│   │   └── price_recommendation.md
-│   │
-│   ├── retriever.py
-│   ├── analyzer.py
-│   ├── embeddings.py
-│   ├── vector_store.py
-│   └── tools.py
-│
-|
-├── frontend/
-│   ├── package.json
-│   ├── next.config.js
-│   ├── tailwind.config.js
-│   ├── src/
-│   │   ├── app/
-│   │   │   ├── layout.tsx
-│   │   │   ├── page.tsx
-│   │   │   ├── products/
-│   │   │   │   └── page.tsx
-│   │   │   ├── competitors/
-│   │   │   │   └── page.tsx
-│   │   │   ├── analytics/
-│   │   │   │   └── page.tsx
-│   │   │   └── chat/
-│   │   │       └── page.tsx
-│   │   │
-│   │   ├── components/
-│   │   │   ├── ProductCard.tsx
-│   │   │   ├── PriceChart.tsx
-│   │   │   ├── CompetitorTable.tsx
-│   │   │   ├── InsightCard.tsx
-│   │   │   └── ChatBox.tsx
-│   │   │
-│   │   ├── lib/
-│   │   │   ├── api.ts
-│   │   │   └── types.ts
-│   │   │
-│   │   └── styles/
-│   │       └── globals.css
 ├── backend/
-│   ├── main.py
-│   ├── routes/
-│   │   ├── products.py
-│   │   ├── competitors.py
-│   │   ├── analytics.py
-│   │   └── chat.py
-│   ├── services/
-│   │   ├── product_service.py
-│   │   ├── analytics_service.py
-│   │   └── llm_service.py
-│   └── schemas/
-│       ├── product.py
-│       └── response.py
+│   └── app/
+│       ├── main.py
+│       ├── routes/                # products, competitors, analysis
+│       └── core/database.py
 │
-├── orchestration/
-│   ├── airflow/
-│   │   ├── dags/
-│   │   │   └── product_pipeline_dag.py
-│   │   └── plugins/
-│   │
-│   └── databricks_workflows/
-│       └── product_intelligence_workflow.yml
-│
-├── data_quality/
-│   ├── expectations/
-│   │   ├── bronze_expectations.yml
-│   │   ├── silver_expectations.yml
-│   │   └── gold_expectations.yml
-│   │
-│   └── checks.py
-│
-├── tests/
-│   ├── unit/
-│   ├── integration/
-│   └── data_quality/
+├── frontend/
+│   └── app/
+│       ├── page.tsx
+│       ├── products/
+│       ├── competitors/
+│       ├── analytics/
+│       └── chat/
 │
 ├── scripts/
-│   ├── dev.sh             # Dev: DB in Docker, backend + frontend run locally
-│   ├── staging.sh         # Staging: all services in Docker
-│   └── run_backend.sh     # Run backend standalone
+│   ├── dev.sh                     # Dev: DB in Docker, services run locally
+│   └── staging.sh                 # Staging: all services in Docker
 │
-└── docs/
-    ├── architecture.md
-    ├── data_model.md
-    ├── pipeline_flow.md
-    └── api_docs.md
+├── docker-compose.yml
+└── pyproject.toml
 ```
 
 ---
 
-## 🚀 Future Improvements
+## Future Improvements
 
-* Real-time streaming (Kafka)
-* Advanced forecasting (Deep Learning)
-* Reinforcement learning for pricing
-* Multi-marketplace expansion
-
----
-
-## 👨‍💻 Author
-
-**Pranav Chourasia**
-Data Engineer | AI/ML Enthusiast
+* Streaming ingestion (Kafka / Databricks Auto Loader)
+* Multi-marketplace support (UK, DE, JP)
+* Reinforcement learning for dynamic pricing
+* Advanced forecasting (Prophet / NeuralProphet)
 
 ---
 
-## ⭐ If you like this project
+## Author
 
-Give it a star ⭐ on GitHub!
+**Pranav Chourasia** — Data Engineer | AI/ML Enthusiast
