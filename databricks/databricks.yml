@@ -31,13 +31,13 @@ workspace:
 
 resources:
   jobs:
-    # ── Full Pipeline ────────────────────────────────────────────────────────
+
+    # ── 1. Daily Ingestion Pipeline ─────────────────────────────────────────────
     # scrape_raw → ingest_bronze → silver_clean → gold_features
-    # Scheduled at 01:00 UTC daily so scraping completes well before
-    # business hours and there is headroom for retries.
+    # Runs at 01:00 UTC so scraping finishes before business hours.
     full_pipeline:
       name: "[PriceSenseAi] Full Pipeline"
-      description: "End-to-end daily pipeline: Oxylabs scrape → bronze → silver → gold"
+      description: "Daily: Oxylabs scrape → bronze → silver → gold features"
 
       schedule:
         quartz_cron_expression: "0 0 1 * * ?"   # 01:00 UTC daily
@@ -51,7 +51,7 @@ resources:
         - job_cluster_key: shared_cluster
           new_cluster:
             spark_version: "15.4.x-scala2.12"
-            node_type_id: Standard_DS3_v2   # Azure — change to m5.xlarge for AWS
+            node_type_id: Standard_DS3_v2
             num_workers: 1
             spark_conf:
               "spark.databricks.delta.preview.enabled": "true"
@@ -69,7 +69,6 @@ resources:
               - requests>=2.33.1
 
       tasks:
-        # 1. Scrape Oxylabs → write JSON to cloud storage
         - task_key: scrape_raw
           python_wheel_task:
             package_name: pricesenseai
@@ -92,12 +91,11 @@ resources:
           max_retries: 1
           min_retry_interval_millis: 300000
 
-        # 2. Append raw JSON to bronze Delta tables
         - task_key: ingest_bronze
           depends_on:
             - task_key: scrape_raw
           notebook_task:
-            notebook_path: ./notebooks/01_bronze_ingestion.py
+            notebook_path: ./notebooks/ingestion/01_bronze_ingestion.py
             base_parameters:
               storage_path: ${var.storage_path}
           job_cluster_key: shared_cluster
@@ -105,12 +103,11 @@ resources:
           max_retries: 1
           min_retry_interval_millis: 300000
 
-        # 3. Deduplicate and normalise into silver tables
         - task_key: silver_clean
           depends_on:
             - task_key: ingest_bronze
           notebook_task:
-            notebook_path: ./notebooks/02_silver_cleaning.py
+            notebook_path: ./notebooks/processing/02_silver_cleaning.py
             base_parameters:
               storage_path: ${var.storage_path}
           job_cluster_key: shared_cluster
@@ -118,27 +115,170 @@ resources:
           max_retries: 1
           min_retry_interval_millis: 300000
 
-        # 4. Compute ML features into gold table
         - task_key: gold_features
           depends_on:
             - task_key: silver_clean
           notebook_task:
-            notebook_path: ./notebooks/03_gold_features.py
+            notebook_path: ./notebooks/processing/03_gold_features.py
           job_cluster_key: shared_cluster
           timeout_seconds: 3600
           max_retries: 1
           min_retry_interval_millis: 300000
 
-    # ── Bronze-only job (manual use / debugging) ─────────────────────────────
-    # No schedule — run ad-hoc when you need to re-ingest a specific date
-    # without going through the full pipeline.
+    # ── 2. Weekly Training Pipeline ─────────────────────────────────────────────
+    # feature_store → train_model → evaluate_model
+    # Runs Monday 02:00 UTC — after enough weekly history has accumulated.
+    training_pipeline:
+      name: "[PriceSenseAi] Training Pipeline"
+      description: "Weekly: register features → train XGBoost → evaluate & promote to Production"
+
+      schedule:
+        quartz_cron_expression: "0 0 2 ? * MON"   # 02:00 UTC every Monday
+        timezone_id: UTC
+
+      email_notifications:
+        on_failure:
+          - ${var.alert_email}
+
+      job_clusters:
+        - job_cluster_key: ml_cluster
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: Standard_DS3_v2
+            num_workers: 1
+            spark_conf:
+              "spark.databricks.delta.preview.enabled": "true"
+            custom_tags:
+              project: pricesense-ai
+              layer: ml
+
+      tasks:
+        - task_key: feature_store_register
+          notebook_task:
+            notebook_path: ./notebooks/training/04_feature_store.py
+          job_cluster_key: ml_cluster
+          timeout_seconds: 1800
+
+        - task_key: train_model
+          depends_on:
+            - task_key: feature_store_register
+          notebook_task:
+            notebook_path: ./notebooks/training/05_train_price_model.py
+            base_parameters:
+              test_size: "0.2"
+              n_estimators: "200"
+              max_depth: "4"
+              learning_rate: "0.05"
+              min_history_days: "7"
+          job_cluster_key: ml_cluster
+          timeout_seconds: 7200
+          max_retries: 0
+
+        - task_key: evaluate_model
+          depends_on:
+            - task_key: train_model
+          notebook_task:
+            notebook_path: ./notebooks/training/06_evaluate_model.py
+            base_parameters:
+              max_rmse: "10.0"
+              max_mape: "15.0"
+              auto_promote: "true"
+          job_cluster_key: ml_cluster
+          timeout_seconds: 1800
+
+    # ── 3. Daily Scoring Pipeline ────────────────────────────────────────────────
+    # batch_score → write gold.price_predictions
+    # Runs at 03:00 UTC daily, after the ingestion pipeline completes.
+    scoring_pipeline:
+      name: "[PriceSenseAi] Scoring Pipeline"
+      description: "Daily: load Production model → score gold features → write predictions"
+
+      schedule:
+        quartz_cron_expression: "0 0 3 * * ?"   # 03:00 UTC daily
+        timezone_id: UTC
+
+      email_notifications:
+        on_failure:
+          - ${var.alert_email}
+
+      job_clusters:
+        - job_cluster_key: scoring_cluster
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: Standard_DS3_v2
+            num_workers: 1
+            custom_tags:
+              project: pricesense-ai
+              layer: inference
+
+      tasks:
+        - task_key: batch_score
+          notebook_task:
+            notebook_path: ./notebooks/inference/07_batch_scoring.py
+            base_parameters:
+              scrape_date: ""   # blank = today UTC
+          job_cluster_key: scoring_cluster
+          timeout_seconds: 1800
+          max_retries: 1
+          min_retry_interval_millis: 300000
+
+    # ── 4. Daily Monitoring Pipeline ─────────────────────────────────────────────
+    # data_drift → model_performance
+    # Runs at 04:00 UTC daily, after scoring completes.
+    monitoring_pipeline:
+      name: "[PriceSenseAi] Monitoring Pipeline"
+      description: "Daily: check data drift + model performance, alert on degradation"
+
+      schedule:
+        quartz_cron_expression: "0 0 4 * * ?"   # 04:00 UTC daily
+        timezone_id: UTC
+
+      email_notifications:
+        on_failure:
+          - ${var.alert_email}
+
+      job_clusters:
+        - job_cluster_key: monitor_cluster
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: Standard_DS3_v2
+            num_workers: 1
+            custom_tags:
+              project: pricesense-ai
+              layer: monitoring
+
+      tasks:
+        - task_key: data_drift
+          notebook_task:
+            notebook_path: ./notebooks/monitoring/08_data_drift.py
+            base_parameters:
+              scrape_date: ""
+              lookback_days: "30"
+              ks_pvalue_thresh: "0.05"
+              mean_drift_thresh: "20.0"
+          job_cluster_key: monitor_cluster
+          timeout_seconds: 1800
+
+        - task_key: model_performance
+          depends_on:
+            - task_key: data_drift
+          notebook_task:
+            notebook_path: ./notebooks/monitoring/09_model_performance.py
+            base_parameters:
+              scrape_date: ""
+              lookback_days: "7"
+              mape_alert_pct: "15.0"
+          job_cluster_key: monitor_cluster
+          timeout_seconds: 1800
+
+    # ── Bronze-only job (manual use / debugging) ─────────────────────────────────
     bronze_ingestion:
       name: "[PriceSenseAi] Bronze Ingestion (manual)"
-      description: "Ad-hoc job — reads existing Oxylabs JSON and appends to bronze tables"
+      description: "Ad-hoc — reads existing Oxylabs JSON and appends to bronze tables"
       tasks:
         - task_key: ingest_bronze
           notebook_task:
-            notebook_path: ./notebooks/01_bronze_ingestion.py
+            notebook_path: ./notebooks/ingestion/01_bronze_ingestion.py
             base_parameters:
               storage_path: ${var.storage_path}
               scrape_date: ""   # blank = today UTC
