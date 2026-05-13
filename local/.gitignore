@@ -1,0 +1,10 @@
+# Override root .gitignore — allow sample data fixtures in this directory
+!data/
+!data/**
+
+# Exclude generated artefacts that don't belong in source control
+.venv/
+mlruns/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
