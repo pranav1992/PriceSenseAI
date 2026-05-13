@@ -241,6 +241,33 @@ Not scheduled — run interactively to understand data and justify production de
 
 ---
 
+## Local ML Development
+
+The `local/` directory is a standalone `uv` project for fast prototyping —
+no Databricks cluster required. It reuses the same `src/` library as production.
+
+```bash
+cd local
+uv sync                                       # install deps into local/.venv
+
+# Generate synthetic sample data (90 days × 3 ASINs)
+uv run python data/generate_sample_data.py
+
+# Launch Jupyter
+uv run jupyter notebook notebooks/
+
+# View MLflow experiment runs
+uv run mlflow ui
+```
+
+| Notebook | What it does locally |
+|---|---|
+| `01_feature_engineering.ipynb` | Reimplements `03_gold_features.py` in pandas |
+| `02_model_experiments.ipynb` | XGBoost vs Ridge vs RandomForest + hyperparameter sweeps |
+| `03_pytorch_experiments.ipynb` | MLP and LSTM alternatives; compare vs XGBoost |
+
+---
+
 ## Testing
 
 ```bash
@@ -248,7 +275,7 @@ Not scheduled — run interactively to understand data and justify production de
 cd backend && uv run pytest
 
 # ML pipeline unit tests (no Spark required)
-cd databricks && python -m pytest tests/unit/
+cd local && uv run pytest ../databricks/tests/unit/ -v
 
 # ML pipeline integration tests (requires Databricks / Delta tables)
 cd databricks && python -m pytest -m integration tests/integration/
