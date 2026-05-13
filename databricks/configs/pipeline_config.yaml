@@ -1,0 +1,33 @@
+cluster:
+  spark_version: "15.4.x-scala2.12"
+  node_type_id: Standard_DS3_v2   # Azure — swap for m5.xlarge on AWS
+  num_workers: 1
+
+schedules:
+  daily_pipeline:    "0 0 1 * * ?"    # 01:00 UTC daily   (scrape → bronze → silver → gold)
+  training_pipeline: "0 0 2 ? * MON"  # 02:00 UTC Mondays (feature store → train → evaluate)
+  scoring_pipeline:  "0 0 3 * * ?"    # 03:00 UTC daily   (batch score → write predictions)
+  monitoring_pipeline: "0 0 4 * * ?"  # 04:00 UTC daily   (drift + performance checks)
+
+notifications:
+  alert_email: pranavc1300@gmail.com
+
+timeouts_seconds:
+  scrape: 1800
+  bronze: 1800
+  silver: 3600
+  gold: 3600
+  feature_store: 1800
+  training: 7200
+  evaluation: 1800
+  scoring: 1800
+  monitoring: 1800
+
+drift:
+  lookback_days: 30
+  ks_pvalue_threshold: 0.05
+  max_mean_drift_pct: 20.0
+
+monitoring:
+  mape_alert_threshold: 15.0
+  lookback_days: 7

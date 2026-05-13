@@ -1,0 +1,20 @@
+model:
+  name: PriceOptimizationModel
+  experiment_path: /Shared/pricesense-ai/price_optimization
+
+hyperparameters:
+  n_estimators: 200
+  max_depth: 4
+  learning_rate: 0.05
+  subsample: 0.8
+  colsample_bytree: 0.8
+  objective: reg:squarederror
+  random_state: 42
+
+training:
+  test_size: 0.2
+  min_history_days: 7
+
+quality_gates:
+  max_rmse: 10.0
+  max_mape: 15.0

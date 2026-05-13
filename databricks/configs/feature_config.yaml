@@ -1,0 +1,27 @@
+features:
+  base_cols:
+    - current_price
+    - price_7d_ma
+    - price_7d_volatility
+    - price_momentum
+    - comp_median_price
+    - comp_avg_price
+    - comp_min_price
+    - comp_max_price
+    - comp_count
+    - competitors_below
+    - comp_pressure_score
+  engineered_cols:
+    - day_of_week
+    - price_to_median_ratio
+  target_col: suggested_price
+
+rolling_windows:
+  days: 7
+
+price_position:
+  band_pct: 0.05
+
+rating_premium:
+  threshold_stars: 0.3
+  premium_pct: 0.03
