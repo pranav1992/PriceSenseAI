@@ -16,9 +16,11 @@
 * Medallion Architecture on Delta Lake (Bronze → Silver → Gold)
 * End-to-end Databricks Workflows — no external scheduler required
 * Time-series price tracking with 7-day rolling features
-* XGBoost price optimisation model tracked in MLflow
-* Competitor price ranking and market position scoring
-* FastAPI backend serving gold-layer features
+* XGBoost price optimisation model with automated training, evaluation and promotion
+* MLflow Model Registry with quality gates (RMSE + MAPE thresholds)
+* Daily batch scoring writing predictions to `gold.price_predictions`
+* Data drift detection (KS test) and rolling model performance monitoring
+* FastAPI backend serving gold-layer features and predictions
 * React/Next.js analytics dashboard with chat interface
 
 ---
@@ -27,19 +29,29 @@
 
 ```
 Oxylabs API
-     ↓  [scrape_raw — 01:00 UTC]
+     ↓  [01:00 UTC daily]
 JSON snapshots in cloud storage (S3 / ADLS)
-     ↓  [ingest_bronze]
+     ↓
 Bronze Delta tables  (append-only, immutable)
-     ↓  [silver_clean]
-Silver Delta tables  (deduplicated, MERGE INTO)
-     ↓  [gold_features]
-Gold Delta table     (ML-ready features, suggested prices)
+     ↓
+Silver Delta tables  (deduplicated via MERGE INTO)
+     ↓
+Gold Delta tables    (ML-ready features + predictions)
      ↓
 FastAPI  →  React dashboard
 ```
 
-All four stages run as a single Databricks job, sequentially, scheduled at **01:00 UTC daily**.
+Four Databricks Workflow jobs orchestrate the full lifecycle:
+
+```
+[Daily 01:00]   scrape_raw → ingest_bronze → silver_clean → gold_features
+
+[Weekly Mon]    feature_store_register → train_model → evaluate_model → (auto-promote)
+
+[Daily 03:00]   batch_score → gold.price_predictions
+
+[Daily 04:00]   data_drift_check → model_performance_check
+```
 
 ---
 
@@ -51,7 +63,9 @@ All four stages run as a single Databricks job, sequentially, scheduled at **01:
 | Orchestration | Databricks Workflows (Asset Bundles) |
 | Processing | Apache Spark 15.4 LTS (Databricks) |
 | Storage | Delta Lake (Unity Catalog or Hive metastore) |
-| ML | XGBoost + MLflow Model Registry |
+| ML Training | XGBoost + scikit-learn |
+| ML Tracking | MLflow Experiments + Model Registry |
+| ML Serving | MLflow batch inference |
 | Backend API | FastAPI + PostgreSQL |
 | Frontend | Next.js + Tailwind CSS |
 
@@ -75,6 +89,7 @@ All four stages run as a single Databricks job, sequentially, scheduled at **01:
 | Table | Description |
 |---|---|
 | `gold.price_features` | 7-day rolling features, competitive signals, `suggested_price` |
+| `gold.price_predictions` | Daily model predictions with model version tracking |
 
 ---
 
@@ -114,8 +129,6 @@ B08N5WRWNW
 
 ### 4. Run locally (dev)
 
-Frontend, backend, and database:
-
 ```bash
 ./scripts/dev.sh
 ```
@@ -129,11 +142,11 @@ Frontend, backend, and database:
 ### 5. Run ingestion locally
 
 ```bash
-# Single ASIN
-uv run python ingestion/jobs/ingest_products.py --asin B0FY52GZFG --output ./data
-
 # All tracked ASINs
 uv run python ingestion/jobs/ingest_products.py --manifest ingestion/asins.txt --output ./data
+
+# Single ASIN
+uv run python ingestion/jobs/ingest_products.py --asin B0FY52GZFG --output ./data
 ```
 
 Writes to `./data/products/YYYY-MM-DD/{asin}.json` and `./data/competitors/YYYY-MM-DD/{asin}_competitors.json`.
@@ -150,7 +163,7 @@ databricks secrets put-secret pricesense OXYLABS_USERNAME --string-value <userna
 databricks secrets put-secret pricesense OXYLABS_PASSWORD --string-value <password>
 ```
 
-### 2. Deploy the pipeline
+### 2. Deploy the bundle
 
 ```bash
 # Development workspace
@@ -161,48 +174,72 @@ databricks bundle deploy --target prod \
   --var storage_path=s3://your-bucket/pricesense
 ```
 
-This deploys two jobs to your Databricks workspace:
+This deploys four jobs to your Databricks workspace:
 
 | Job | Schedule | Purpose |
 |---|---|---|
-| `[PriceSenseAi] Full Pipeline` | 01:00 UTC daily | scrape → bronze → silver → gold |
+| `[PriceSenseAi] Full Pipeline` | Daily 01:00 UTC | scrape → bronze → silver → gold |
+| `[PriceSenseAi] Training Pipeline` | Weekly Mon 02:00 UTC | feature store → train → evaluate → promote |
+| `[PriceSenseAi] Scoring Pipeline` | Daily 03:00 UTC | batch score → write predictions |
+| `[PriceSenseAi] Monitoring Pipeline` | Daily 04:00 UTC | drift detection + performance check |
 | `[PriceSenseAi] Bronze Ingestion (manual)` | unscheduled | re-ingest a specific date ad-hoc |
 
-### 3. Run manually
+### 3. Run a job manually
 
 ```bash
 databricks bundle run full_pipeline --target dev
-```
-
-### Pipeline task DAG
-
-```
-scrape_raw  →  ingest_bronze  →  silver_clean  →  gold_features
+databricks bundle run training_pipeline --target dev
+databricks bundle run scoring_pipeline --target dev
 ```
 
 ---
 
-## ML Model
+## ML Pipeline
 
-Train the XGBoost price optimisation model (run weekly or on-demand in Databricks):
+### Training (`databricks/notebooks/training/`)
 
+| Notebook | What it does |
+|---|---|
+| `04_feature_store.py` | Registers `gold.price_features` in Databricks Feature Store |
+| `05_train_price_model.py` | Trains XGBoost, logs run to MLflow, registers model version |
+| `06_evaluate_model.py` | Loads latest version, checks RMSE + MAPE quality gates, auto-promotes to Production |
+
+Quality gates are configured in `databricks/configs/model_config.yaml`:
+
+```yaml
+quality_gates:
+  max_rmse: 10.0
+  max_mape: 15.0
 ```
-databricks/notebooks/04_price_model.py
-```
 
-Logs metrics and registers the model in the MLflow Model Registry as `PriceOptimizationModel`. The FastAPI backend serves predictions from the registered model.
+### Inference (`databricks/notebooks/inference/`)
+
+| Notebook | What it does |
+|---|---|
+| `07_batch_scoring.py` | Loads Production model, scores today's features, writes `gold.price_predictions` |
+
+### Monitoring (`databricks/notebooks/monitoring/`)
+
+| Notebook | What it does |
+|---|---|
+| `08_data_drift.py` | KS test per feature against 30-day baseline; alerts on significant shift |
+| `09_model_performance.py` | Rolling MAPE over recent predictions; triggers retraining alert if degraded |
+
+Both monitoring notebooks log to the `/Shared/pricesense-ai/monitoring` MLflow experiment.
 
 ---
 
 ## Testing
 
 ```bash
-# All tests
+# Backend unit + integration tests
 cd backend && uv run pytest
 
-# Unit or integration only
-uv run pytest -m unit
-uv run pytest -m integration
+# ML pipeline unit tests (no Spark required)
+cd databricks && python -m pytest tests/unit/
+
+# ML pipeline integration tests (requires Databricks / Delta tables)
+cd databricks && python -m pytest -m integration tests/integration/
 ```
 
 ---
@@ -212,24 +249,54 @@ uv run pytest -m integration
 ```
 PriceSenseAI/
 ├── ingestion/
-│   ├── asins.txt                  # Tracked ASINs — one per line
+│   ├── asins.txt                      # Tracked ASINs — one per line
 │   ├── jobs/
-│   │   ├── ingest_products.py     # Full product + competitor scrape
-│   │   ├── ingest_prices.py       # Lightweight price-only snapshot
-│   │   └── ingest_reviews.py      # (placeholder)
+│   │   ├── ingest_products.py         # Full product + competitor scrape
+│   │   ├── ingest_prices.py           # Lightweight price-only snapshot
+│   │   └── ingest_reviews.py          # (placeholder)
 │   └── oxylabs_client/
-│       └── client.py              # Oxylabs API wrapper
+│       └── client.py                  # Oxylabs API wrapper
 │
 ├── databricks/
-│   ├── databricks.yml             # Asset Bundle — job definitions (canonical)
+│   ├── databricks.yml                 # Asset Bundle — all job definitions (canonical)
 │   ├── notebooks/
-│   │   ├── 01_bronze_ingestion.py
-│   │   ├── 02_silver_cleaning.py
-│   │   ├── 03_gold_features.py
-│   │   └── 04_price_model.py
-│   ├── jobs/
-│   │   ├── bronze_job.yml         # Reference doc (not deployed directly)
-│   │   └── silver_gold_job.yml    # Reference doc (not deployed directly)
+│   │   ├── ingestion/
+│   │   │   └── 01_bronze_ingestion.py
+│   │   ├── processing/
+│   │   │   ├── 02_silver_cleaning.py
+│   │   │   └── 03_gold_features.py
+│   │   ├── training/
+│   │   │   ├── 04_feature_store.py
+│   │   │   ├── 05_train_price_model.py
+│   │   │   └── 06_evaluate_model.py
+│   │   ├── inference/
+│   │   │   └── 07_batch_scoring.py
+│   │   └── monitoring/
+│   │       ├── 08_data_drift.py
+│   │       └── 09_model_performance.py
+│   ├── src/                           # Reusable Python library imported by notebooks
+│   │   ├── features/
+│   │   │   ├── definitions.py         # Feature column lists, constants
+│   │   │   └── validation.py          # Data quality checks
+│   │   ├── models/
+│   │   │   ├── price_optimizer.py     # XGBoost model class
+│   │   │   └── hyperparams.py         # Default hyperparameters + search space
+│   │   ├── evaluation/
+│   │   │   └── metrics.py             # RMSE, MAE, MAPE, quality gate
+│   │   └── utils/
+│   │       ├── mlflow_utils.py        # Experiment setup, model registry helpers
+│   │       └── spark_utils.py         # SparkSession factory
+│   ├── configs/
+│   │   ├── model_config.yaml          # Hyperparameters, quality gate thresholds
+│   │   ├── feature_config.yaml        # Feature lists, rolling windows, thresholds
+│   │   └── pipeline_config.yaml       # Cluster specs, cron schedules, alert config
+│   ├── tests/
+│   │   ├── unit/
+│   │   │   ├── test_features.py
+│   │   │   └── test_metrics.py
+│   │   └── integration/
+│   │       └── test_pipeline_e2e.py
+│   ├── jobs/                          # Reference YAMLs (not deployed directly)
 │   └── sql/
 │       ├── create_tables.sql
 │       └── quality_checks.sql
@@ -237,7 +304,7 @@ PriceSenseAI/
 ├── backend/
 │   └── app/
 │       ├── main.py
-│       ├── routes/                # products, competitors, analysis
+│       ├── routes/                    # products, competitors, analysis
 │       └── core/database.py
 │
 ├── frontend/
@@ -249,8 +316,8 @@ PriceSenseAI/
 │       └── chat/
 │
 ├── scripts/
-│   ├── dev.sh                     # Dev: DB in Docker, services run locally
-│   └── staging.sh                 # Staging: all services in Docker
+│   ├── dev.sh                         # Dev: DB in Docker, services run locally
+│   └── staging.sh                     # Staging: all services in Docker
 │
 ├── docker-compose.yml
 └── pyproject.toml
@@ -264,6 +331,7 @@ PriceSenseAI/
 * Multi-marketplace support (UK, DE, JP)
 * Reinforcement learning for dynamic pricing
 * Advanced forecasting (Prophet / NeuralProphet)
+* Hyperparameter tuning with Hyperopt or Optuna
 
 ---
 
