@@ -227,6 +227,18 @@ quality_gates:
 
 Both monitoring notebooks log to the `/Shared/pricesense-ai/monitoring` MLflow experiment.
 
+### Exploratory (`databricks/notebooks/exploratory/`)
+
+Not scheduled — run interactively to understand data and justify production decisions.
+
+| Notebook | What it answers |
+|---|---|
+| `EDA_01_data_overview.py` | Schema, null rates, coverage gaps, data health across all layers |
+| `EDA_02_price_analysis.py` | Price distributions, time-series trends, day-of-week seasonality |
+| `EDA_03_competitor_landscape.py` | Competitor count, price spread, rating-price correlation, market position |
+| `EDA_04_feature_engineering.py` | Rolling window sensitivity (3d/7d/14d), position band tuning, feature correlations |
+| `EDA_05_model_selection.py` | XGBoost vs baselines, hyperparameter sweeps, learning curves, residual analysis |
+
 ---
 
 ## Testing
@@ -271,9 +283,15 @@ PriceSenseAI/
 │   │   │   └── 06_evaluate_model.py
 │   │   ├── inference/
 │   │   │   └── 07_batch_scoring.py
-│   │   └── monitoring/
-│   │       ├── 08_data_drift.py
-│   │       └── 09_model_performance.py
+│   │   ├── monitoring/
+│   │   │   ├── 08_data_drift.py
+│   │   │   └── 09_model_performance.py
+│   │   └── exploratory/               # Not scheduled — run interactively
+│   │       ├── EDA_01_data_overview.py
+│   │       ├── EDA_02_price_analysis.py
+│   │       ├── EDA_03_competitor_landscape.py
+│   │       ├── EDA_04_feature_engineering.py
+│   │       └── EDA_05_model_selection.py
 │   ├── src/                           # Reusable Python library imported by notebooks
 │   │   ├── features/
 │   │   │   ├── definitions.py         # Feature column lists, constants
