@@ -246,19 +246,44 @@ Not scheduled — run interactively to understand data and justify production de
 The `local/` directory is a standalone `uv` project for fast prototyping —
 no Databricks cluster required. It reuses the same `src/` library as production.
 
+### 1. Install dependencies
+
 ```bash
 cd local
-uv sync                                       # install deps into local/.venv
+uv sync                          # creates local/.venv with all ML deps
+```
 
-# Generate synthetic sample data (90 days × 3 ASINs)
+### 2. Generate sample data
+
+```bash
 uv run python data/generate_sample_data.py
+```
 
-# Launch Jupyter
+Writes 90 days of synthetic price data for 3 ASINs to `local/data/`.
+
+### 3. Launch Jupyter
+
+```bash
+# Classic Notebook
 uv run jupyter notebook notebooks/
 
-# View MLflow experiment runs
+# Or JupyterLab
+uv run jupyter lab notebooks/
+```
+
+Opens in your browser at `http://localhost:8888`. Select any notebook to run.
+
+### 4. View MLflow experiment runs
+
+```bash
 uv run mlflow ui
 ```
+
+Opens at `http://localhost:5000` — shows all logged experiments from the notebooks.
+
+---
+
+### Notebooks
 
 | Notebook | What it does locally |
 |---|---|
