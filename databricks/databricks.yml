@@ -3,7 +3,7 @@ bundle:
 
 variables:
   storage_path:
-    description: "Cloud storage root (e.g. abfss://container@account.dfs.core.windows.net/pricesense or s3://bucket/pricesense)"
+    description: "GCS root path (e.g. gs://your-bucket/pricesense)"
     default: ""
   catalog:
     description: "Unity Catalog catalog name (leave empty to use legacy Hive metastore)"
@@ -51,8 +51,10 @@ resources:
         - job_cluster_key: shared_cluster
           new_cluster:
             spark_version: "15.4.x-scala2.12"
-            node_type_id: Standard_DS3_v2
+            node_type_id: n1-standard-4
             num_workers: 1
+            gcp_attributes:
+              google_service_account: your-sa@your-project.iam.gserviceaccount.com
             spark_conf:
               "spark.databricks.delta.preview.enabled": "true"
             custom_tags:
@@ -64,8 +66,7 @@ resources:
             client: "1"
             dependencies:
               - fsspec>=2024.2.0
-              - s3fs>=2024.2.0
-              - adlfs>=2024.2.0
+              - gcsfs>=2024.2.0
               - requests>=2.33.1
 
       tasks:
@@ -144,8 +145,10 @@ resources:
         - job_cluster_key: ml_cluster
           new_cluster:
             spark_version: "15.4.x-scala2.12"
-            node_type_id: Standard_DS3_v2
+            node_type_id: n1-standard-4
             num_workers: 1
+            gcp_attributes:
+              google_service_account: your-sa@your-project.iam.gserviceaccount.com
             spark_conf:
               "spark.databricks.delta.preview.enabled": "true"
             custom_tags:
@@ -205,8 +208,10 @@ resources:
         - job_cluster_key: scoring_cluster
           new_cluster:
             spark_version: "15.4.x-scala2.12"
-            node_type_id: Standard_DS3_v2
+            node_type_id: n1-standard-4
             num_workers: 1
+            gcp_attributes:
+              google_service_account: your-sa@your-project.iam.gserviceaccount.com
             custom_tags:
               project: pricesense-ai
               layer: inference
@@ -241,8 +246,10 @@ resources:
         - job_cluster_key: monitor_cluster
           new_cluster:
             spark_version: "15.4.x-scala2.12"
-            node_type_id: Standard_DS3_v2
+            node_type_id: n1-standard-4
             num_workers: 1
+            gcp_attributes:
+              google_service_account: your-sa@your-project.iam.gserviceaccount.com
             custom_tags:
               project: pricesense-ai
               layer: monitoring
@@ -290,8 +297,10 @@ resources:
         - job_cluster_key: shared_cluster
           new_cluster:
             spark_version: "15.4.x-scala2.12"
-            node_type_id: Standard_DS3_v2
+            node_type_id: n1-standard-4
             num_workers: 1
+            gcp_attributes:
+              google_service_account: your-sa@your-project.iam.gserviceaccount.com
             custom_tags:
               project: pricesense-ai
               layer: bronze

@@ -63,8 +63,10 @@ job:
     - job_cluster_key: pipeline_cluster
       new_cluster:
         spark_version: "15.4.x-scala2.12"
-        node_type_id: Standard_DS3_v2
+        node_type_id: n1-standard-4        # GCP
         num_workers: 1
+        gcp_attributes:
+          google_service_account: your-sa@your-project.iam.gserviceaccount.com
         spark_conf:
           "spark.databricks.delta.preview.enabled": "true"
           "spark.sql.shuffle.partitions": "8"   # small data: avoid 200-partition default
